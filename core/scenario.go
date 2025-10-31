@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"fmt"
-	"smartpentestutility/shell"
 	"smartpentestutility/utility"
 	"strings"
 	"sync"
@@ -16,100 +15,63 @@ import (
 )
 
 type Scenario struct {
-	Main         string
-	ThreadNumber int
-	pdfChecker   bool
-	profileName  string
-	Modules      map[string]string
-	Outputs      map[string]string
+	Main          string
+	ThreadNumber  int
+	pdfChecker    bool
+	profileName   string
+	Outputs       map[string]string
+	ModulesStruct []*Module
 }
 
-func NewScenario(main string, m map[string]string, thread int, p string, b bool) *Scenario {
-	return &Scenario{Main: main, ThreadNumber: thread, pdfChecker: b, profileName: p, Modules: m, Outputs: map[string]string{}}
+func NewScenario(main string, thread int, p string, b bool, module []*Module) *Scenario {
+	return &Scenario{Main: main, ThreadNumber: thread, pdfChecker: b, profileName: p, Outputs: map[string]string{}, ModulesStruct: module}
 }
 
-func (s *Scenario) BeginScenario(ctx context.Context) {
-	s.execute(ctx)
+func (s *Scenario) BeginScenario(ctx context.Context, outputter func(string, *Module)) {
+	s.execute(ctx, outputter)
 	if s.pdfChecker {
 		s.makePDF()
 	}
 }
 
-func (s *Scenario) execute(ctx context.Context) {
-	type execRespond struct {
-		moduleName string
-		Output     string
-	}
-	output := make(chan execRespond, len(s.Modules))
-	defer close(output)
-
+func (s *Scenario) execute(ctx context.Context, outputter func(string, *Module)) {
 	var wg sync.WaitGroup
 
 	stopper := make(chan struct{}, s.ThreadNumber)
 	defer close(stopper)
 
-	for moduleName, moduleContent := range s.Modules {
+	for _, m := range s.ModulesStruct {
 		wg.Add(1)
-		go func(module, content string) {
+		go func(m *Module) {
+			m.Output = ""
+			localOutputter := func(s string) {
+				go outputter(s, m)
+			}
 			stopper <- struct{}{}
 			defer func() { <-stopper }()
 			defer wg.Done()
 
 			if utility.IsCanceled(ctx) {
-				output <- execRespond{
-					moduleName: module,
-					Output:     "Отменено",
-				}
+				localOutputter("Отменено\n")
 				return
 			}
 
-			if content == "" {
-				output <- execRespond{
-					moduleName: module,
-					Output:     "",
-				}
-				return
-			}
-
-			execution := shell.NewRuntime()
-			e := execution.Execute(s.Main, ctx)
+			execution := NewRuntime(m)
+			e := execution.Execute(s.Main, ctx, localOutputter)
 			if e != nil {
-				output <- execRespond{
-					moduleName: module,
-					Output:     fmt.Sprintf("Main module error: %s", e.Error()),
-				}
+				localOutputter(fmt.Sprintf("Main module error: %s\n", e.Error()))
 				return
 			}
-			e = execution.Execute(content, ctx)
+			e = execution.Execute(m.Content, ctx, localOutputter)
 			if e != nil {
-				output <- execRespond{
-					moduleName: module,
-					Output:     fmt.Sprintf("Module '%s' error: %s", moduleName, e.Error()),
-				}
+				localOutputter(fmt.Sprintf("Module '%s' error: %s\n", m.Name, e.Error()))
 				return
 			}
 
-			output <- execRespond{
-				moduleName: module,
-				Output:     execution.Output.String(),
-			}
-		}(moduleName, moduleContent)
+		}(m)
 	}
 
 	wg.Wait()
-
-channelFlush:
-	for {
-		select {
-		case i := <-output:
-			s.Outputs[i.moduleName] = i.Output
-		default:
-			break channelFlush
-		}
-	}
-	for key, value := range s.Outputs {
-		s.Modules[key] = value
-	}
 }
 
 //go:embed TimesNewRoman.ttf
@@ -125,17 +87,17 @@ func (s *Scenario) makePDF() {
 	pdf.AddPage()
 	pdf.SetFont("TimesNewRoman", "", 22)
 	pdf.SetTextColor(0, 0, 0)
-	for key, value := range s.Modules {
+	for _, m := range s.ModulesStruct {
 		pdf.SetFontSize(22)
 		pdf.SetFontStyle("B")
-		pdf.Cell(0, 10, key)
+		pdf.Cell(0, 10, m.Name)
 		pdf.Ln(15)
 		pdf.SetFontSize(14)
 		pdf.SetFontStyle("")
-		pdf.MultiCell(0, 10, value, "0", "L", false)
+		pdf.MultiCell(0, 10, m.Output, "0", "L", false)
 	}
 
-	e := pdf.OutputFileAndClose(strings.TrimSuffix(s.profileName, ".json") + time.Now().Format(" 02.01.2006 104-05") + ".pdf")
+	e := pdf.OutputFileAndClose(strings.TrimSuffix(s.profileName, ".json") + time.Now().Format(" 02.01.2006 15-04-05") + ".pdf")
 	if e != nil {
 		zenity.Error("Ошибка формирования PDF: " + e.Error())
 	}

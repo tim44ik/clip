@@ -1,11 +1,14 @@
 package main
 
-import core "smartpentestutility/core"
+import (
+	core "smartpentestutility/core"
 
-type CorePointer struct {
-}
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/app"
+)
 
 func main() {
-	core.SpuAppInstance = core.CreateApp()
-	core.SpuAppInstance.Window.ShowAndRun()
+	app.New()
+	fyne.CurrentApp().Settings().SetTheme(core.BlackTextTheme{})
+	core.CreateWindow().Window.ShowAndRun()
 }

@@ -10,7 +10,7 @@ import (
 )
 
 func ShowModuleCreationDialog(callback func(*Module)) {
-	window := SpuAppInstance.NewWindow("Добавление модуля")
+	window := fyne.CurrentApp().NewWindow("Добавление модуля")
 
 	title := canvas.NewText("Название:", color.Black)
 	title.TextSize = 16

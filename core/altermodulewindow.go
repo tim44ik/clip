@@ -10,7 +10,7 @@ import (
 )
 
 func ShowModuleAlteringDialog(oldModule *Module, callback func(*Module)) {
-	window := SpuAppInstance.NewWindow("Изменение модуля")
+	window := fyne.CurrentApp().NewWindow("Изменение модуля")
 
 	title := canvas.NewText("Название:", color.Black)
 	title.TextSize = 16
