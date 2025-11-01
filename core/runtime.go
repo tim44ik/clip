@@ -56,7 +56,7 @@ func (r *Runtime) Execute(code string, ctx context.Context, outputter func(strin
 		return e
 	}
 
-	ctx, ctxCancel := context.WithCancel(context.Background())
+	ctx, ctxCancel := context.WithCancel(ctx)
 	defer ctxCancel()
 	stdOutCh, stdOutCancel := utility.WrapReaderToChannel(stdOutR)
 	stdErrCh, stdErrCancel := utility.WrapReaderToChannel(stdErrR)
@@ -66,12 +66,13 @@ func (r *Runtime) Execute(code string, ctx context.Context, outputter func(strin
 	go func() {
 		for {
 			select {
+			case <-ctx.Done():
+				return
 			case str := <-stdOutCh:
 				outputter(str)
 			case str := <-stdErrCh:
 				outputter(str)
-			case <-ctx.Done():
-				return
+
 			}
 		}
 	}()
@@ -103,8 +104,17 @@ func (r *Runtime) Execute(code string, ctx context.Context, outputter func(strin
 		writeStdIn(line + "\n")
 	}
 	writeStdIn("exit\n")
-	if _, e := proc.Wait(); e != nil {
-		return e
+	waitCh := make(chan struct{}, 1)
+	defer close(waitCh)
+	go func() {
+		proc.Wait()
+		waitCh <- struct{}{}
+	}()
+	select {
+	case <-waitCh:
+		return nil
+	case <-ctx.Done():
+		proc.Kill()
 	}
 
 	time.Sleep(time.Second * 1)

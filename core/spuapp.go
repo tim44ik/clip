@@ -394,7 +394,11 @@ func (a *SpuWindow) refreshModuleGui() {
 }
 
 func (a *SpuWindow) addModuleOutput(module *Module, line string) {
-	module.Output += line
+	if line == "Отменено" && module == a.selectedModule {
+		module.Output += line
+	} else if line != "Отменено" {
+		module.Output += line
+	}
 	if module == a.selectedModule {
 		a.Elms.ModuleOutputEntryMutex.Lock()
 		defer a.Elms.ModuleOutputEntryMutex.Unlock()
