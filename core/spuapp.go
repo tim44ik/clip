@@ -73,7 +73,7 @@ func CreateWindow() (a *SpuWindow) {
 }
 
 func (a *SpuWindow) buildWindow(app fyne.App) {
-	a.Window = app.NewWindow("SPU")
+	a.Window = app.NewWindow("clip")
 	a.Elms.title = canvas.NewText("", color.Black)
 	a.Elms.title.TextSize = 16
 
