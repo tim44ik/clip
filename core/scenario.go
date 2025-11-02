@@ -1,12 +1,10 @@
 package core
 
 import (
+	"clip/utility"
 	"context"
 	"fmt"
-	"smartpentestutility/utility"
-	"strings"
 	"sync"
-	"time"
 
 	"github.com/ncruces/zenity"
 	"github.com/phpdave11/gofpdf"
@@ -17,19 +15,18 @@ import (
 type Scenario struct {
 	Main          string
 	ThreadNumber  int
-	pdfChecker    bool
-	profileName   string
-	Outputs       map[string]string
+	PDF           bool
+	pdfName       string
 	ModulesStruct []*Module
 }
 
-func NewScenario(main string, thread int, p string, b bool, module []*Module) *Scenario {
-	return &Scenario{Main: main, ThreadNumber: thread, pdfChecker: b, profileName: p, Outputs: map[string]string{}, ModulesStruct: module}
+func NewScenario(main string, thread int, b bool, pdfName string, module []*Module) *Scenario {
+	return &Scenario{Main: main, ThreadNumber: thread, PDF: b, pdfName: pdfName, ModulesStruct: module}
 }
 
 func (s *Scenario) BeginScenario(ctx context.Context, outputter func(string, *Module)) {
 	s.execute(ctx, outputter)
-	if s.pdfChecker {
+	if s.PDF {
 		s.makePDF()
 	}
 }
@@ -55,14 +52,9 @@ func (s *Scenario) execute(ctx context.Context, outputter func(string, *Module))
 				localOutputter("Отменено\n")
 				return
 			}
-
-			execution := NewRuntime(m)
-			e := execution.Execute(s.Main, ctx, localOutputter)
-			if e != nil {
-				localOutputter(fmt.Sprintf("Main module error: %s\n", e.Error()))
-				return
-			}
-			e = execution.Execute(m.Content, ctx, localOutputter)
+			m.Output = ""
+			execution := NewRuntime()
+			e := execution.Execute(s.Main+"\n"+m.Content, ctx, localOutputter)
 			if e != nil {
 				localOutputter(fmt.Sprintf("Module '%s' error: %s\n", m.Name, e.Error()))
 				return
@@ -96,8 +88,7 @@ func (s *Scenario) makePDF() {
 		pdf.SetFontStyle("")
 		pdf.MultiCell(0, 10, m.Output, "0", "L", false)
 	}
-
-	e := pdf.OutputFileAndClose(strings.TrimSuffix(s.profileName, ".json") + time.Now().Format(" 02.01.2006 15-04-05") + ".pdf")
+	e := pdf.OutputFileAndClose(s.pdfName + ".pdf")
 	if e != nil {
 		zenity.Error("Ошибка формирования PDF: " + e.Error())
 	}

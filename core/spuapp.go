@@ -1,6 +1,7 @@
 package core
 
 import (
+	"clip/utility"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,10 +9,10 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"smartpentestutility/utility"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -163,7 +164,15 @@ func (a *SpuWindow) buildWindow(app fyne.App) {
 func (a *SpuWindow) SelectModule(m *Module) {
 	a.ApplyModuleChanges()
 	a.selectedModule = m
-	a.Elms.title.Text = fmt.Sprintf("Модуль '%s'", m.Name)
+	a.Elms.title.Text = fmt.Sprintf("Модуль '%s'", func(s string) string {
+		if !strings.Contains(s, "\n") && len(s) < 30 {
+			return s
+		} else if len(s) > 30 {
+			return s[:31] + "..."
+		}
+		s = strings.ReplaceAll(s, "\n", " ")
+		return s[:31] + "..."
+	}(m.Name))
 	a.Elms.title.Refresh()
 	a.Elms.moduleContentEntry.SetText(m.Content)
 	a.Elms.ModuleOutputEntry.SetText(m.Output)
@@ -296,7 +305,19 @@ func (a *SpuWindow) beginScenario() {
 			return
 		}
 	}
-	scenario := NewScenario(a.Modules.MainModule.Content, t, a.Profiles.Path, a.makePDF, a.Modules.ChildModules)
+	var f string
+	if a.makePDF {
+		f, err = zenity.SelectFileSave(zenity.Title("Загрузите конфигурацию модулей"),
+			zenity.FileFilters{{Name: "PDF Files", Patterns: []string{"*.pdf"}}}, zenity.ConfirmOverwrite())
+		if err != nil {
+			f = ""
+		}
+	}
+
+	if f == "" {
+		f = strings.TrimSuffix(a.Profiles.Path, ".json") + time.Now().Format(" 02.01.2006 15-04-05") + ".pdf"
+	}
+	scenario := NewScenario(a.Modules.MainModule.Content, t, a.makePDF, f, a.Modules.ChildModules)
 	a.currentScenario = scenario
 	a.Elms.ModuleOutputEntry.Text = ""
 	a.Elms.ModuleOutputEntry.Refresh()
@@ -379,6 +400,26 @@ func (a *SpuWindow) selectMainModule() {
 }
 
 func (a *SpuWindow) createModuleButton(m *Module) fyne.Widget {
+	if len(m.Name) > 18 && !strings.Contains(m.Name, "\n") {
+		return widget.NewButton(func(s string) string {
+			if len(s) > 18 {
+				f := 0
+				for i := range s {
+					if s[i] == '+' || s[i] == '-' || s[i] == '_' || s[i] == '=' || s[i] == ' ' {
+						f = i
+					}
+					if i%18 == 0 && f != 0 {
+						s = s[:f] + "\n" + s[f:]
+						continue
+					}
+					if i%18 == 0 && i != 0 {
+						s = s[:i] + "\n" + s[i:]
+					}
+				}
+			}
+			return s
+		}(m.Name), func() { a.SelectModule(m) })
+	}
 	return widget.NewButton(m.Name, func() { a.SelectModule(m) })
 }
 

@@ -1,25 +1,20 @@
 package utility
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
+	"runtime"
 	"strconv"
 	"time"
+
+	"golang.org/x/text/encoding/charmap"
+	"golang.org/x/text/transform"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/widget"
 )
-
-// func Clamp(i, min, max int) int {
-// 	if i < min {
-// 		return min
-// 	}
-// 	if i > max {
-// 		return max
-// 	}
-// 	return i
-// }
 
 type WrappedReader struct {
 	Channel chan string
@@ -28,6 +23,7 @@ type WrappedReader struct {
 
 func WrapReaderToChannel(reader io.Reader) (ch chan string, free func()) {
 	var doFree bool
+	var outputString string
 	buff := make([]byte, 1024)
 	ch = make(chan string)
 	free = func() { doFree = true }
@@ -43,7 +39,15 @@ func WrapReaderToChannel(reader io.Reader) (ch chan string, free func()) {
 				time.Sleep(time.Second / 25)
 				continue
 			}
-			ch <- string(buff[:n])
+			if runtime.GOOS == "windows" {
+				reader := transform.NewReader(bytes.NewReader(buff[:n]), charmap.CodePage866.NewDecoder())
+				bytes, _ := io.ReadAll(reader)
+				outputString = string(bytes)
+
+			} else {
+				outputString = string(buff[:n])
+			}
+			ch <- outputString
 		}
 	}()
 

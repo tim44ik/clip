@@ -2,6 +2,7 @@ package core
 
 import (
 	"image/color"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -15,23 +16,30 @@ func ShowModuleAlteringDialog(oldModule *Module, callback func(*Module)) {
 	title := canvas.NewText("Название:", color.Black)
 	title.TextSize = 16
 
-	input := widget.NewEntry()
+	input := widget.NewMultiLineEntry()
 	input.SetText(oldModule.Name)
 	createButton := widget.NewButton("Сохранить модуль", func() {
 		newModule := &Module{
-			Name:    input.Text,
+			Name:    strings.Trim(input.Text, " \n\t"),
 			Content: oldModule.Content,
 		}
 		callback(newModule)
 		window.Close()
 	})
 
-	centralContent := container.NewBorder(container.NewVBox(title, input),
+	scroll := container.NewVScroll(input)
+	scroll.ScrollToBottom()
+	centralContent := container.NewBorder(nil,
 		createButton,
-		nil, nil)
-	centralPadded := container.NewPadded(centralContent)
+		nil, nil, container.NewPadded(
+			container.NewBorder(
+				title,
+				nil, nil, nil, scroll,
+			),
+		),
+	)
 	background := canvas.NewRectangle(color.White)
-	content := container.NewStack(background, centralPadded)
+	content := container.NewStack(background, centralContent)
 
 	window.SetContent(content)
 	window.Resize(fyne.NewSize(500, 300))

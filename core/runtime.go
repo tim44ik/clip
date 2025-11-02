@@ -1,26 +1,23 @@
 package core
 
 import (
+	"clip/utility"
 	"context"
 	"fmt"
 	"os"
 	"regexp"
-	"smartpentestutility/utility"
+	"runtime"
 	"strings"
 	"time"
 )
 
 type Runtime struct {
-	Module    *Module
 	Variables map[string]string
 	Directory string
 }
 
-func NewRuntime(m *Module) *Runtime {
-	m.Output = ""
-
+func NewRuntime() *Runtime {
 	return &Runtime{
-		Module:    m,
 		Variables: map[string]string{},
 	}
 }
@@ -49,7 +46,13 @@ func (r *Runtime) Execute(code string, ctx context.Context, outputter func(strin
 		stdInW.Write([]byte(s))
 	}
 
-	proc, e := os.StartProcess("/bin/bash", nil, &os.ProcAttr{
+	path := ""
+	if runtime.GOOS == "windows" {
+		path = "C:\\Windows\\System32\\cmd.exe"
+	} else {
+		path = "/bin/bash"
+	}
+	proc, e := os.StartProcess(path, nil, &os.ProcAttr{
 		Files: []*os.File{stdInR, stdOutW, stdErrW},
 	})
 	if e != nil {
@@ -100,7 +103,9 @@ func (r *Runtime) Execute(code string, ctx context.Context, outputter func(strin
 			}
 			return s
 		})
-		writeStdIn("echo ] " + strings.ReplaceAll(line, ">", "]") + "\n")
+		if runtime.GOOS != "windows" {
+			writeStdIn("echo ] " + strings.ReplaceAll(line, ">", "]") + "\n")
+		}
 		writeStdIn(line + "\n")
 	}
 	writeStdIn("exit\n")

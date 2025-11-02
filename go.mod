@@ -1,20 +1,20 @@
-module smartpentestutility
+module clip
 
-go 1.25.1
+go 1.25.3
 
 require (
-	fyne.io/demo v1.6.0 // indirect
-	fyne.io/fyne/v2 v2.7.0 // indirect
+	fyne.io/fyne/v2 v2.7.0
+	github.com/ncruces/zenity v0.10.14
+	github.com/phpdave11/gofpdf v1.4.3
+	golang.org/x/text v0.27.0
+)
+
+require (
 	fyne.io/systray v1.11.1-0.20250603113521-ca66a66d8b58 // indirect
 	github.com/BurntSushi/toml v1.5.0 // indirect
-	github.com/adrg/strutil v0.2.2 // indirect
-	github.com/adrg/sysfont v0.1.2 // indirect
-	github.com/adrg/xdg v0.3.0 // indirect
 	github.com/akavel/rsrc v0.10.2 // indirect
-	github.com/alecthomas/chroma/v2 v2.15.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dchest/jsmin v0.0.0-20220218165748-59f39799265f // indirect
-	github.com/dlclark/regexp2 v1.11.4 // indirect
 	github.com/fredbi/uri v1.1.1 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/fyne-io/gl-js v0.2.0 // indirect
@@ -23,7 +23,6 @@ require (
 	github.com/fyne-io/oksvg v0.2.0 // indirect
 	github.com/go-gl/gl v0.0.0-20231021071112-07e5d0ea2e71 // indirect
 	github.com/go-gl/glfw/v3.3/glfw v0.0.0-20240506104042-037f3cc74f2a // indirect
-	github.com/go-pdf/fpdf v0.9.0 // indirect
 	github.com/go-text/render v0.2.0 // indirect
 	github.com/go-text/typesetting v0.2.1 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
@@ -32,10 +31,9 @@ require (
 	github.com/jeandeaual/go-locale v0.0.0-20250612000132-0ef82f21eade // indirect
 	github.com/josephspurrier/goversioninfo v1.4.1 // indirect
 	github.com/jsummers/gobmp v0.0.0-20230614200233-a9de23ed2e25 // indirect
-	github.com/ncruces/zenity v0.10.14 // indirect
+	github.com/kr/text v0.2.0 // indirect
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect
 	github.com/nicksnyder/go-i18n/v2 v2.5.1 // indirect
-	github.com/phpdave11/gofpdf v1.4.3 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/randall77/makefat v0.0.0-20210315173500-7ddd0e42c844 // indirect
 	github.com/rymdport/portal v0.4.2 // indirect
@@ -44,8 +42,7 @@ require (
 	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/yuin/goldmark v1.7.8 // indirect
 	golang.org/x/image v0.24.0 // indirect
-	golang.org/x/net v0.35.0 // indirect
-	golang.org/x/sys v0.30.0 // indirect
-	golang.org/x/text v0.22.0 // indirect
+	golang.org/x/net v0.42.0 // indirect
+	golang.org/x/sys v0.34.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

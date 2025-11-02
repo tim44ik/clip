@@ -1,7 +1,7 @@
 package main
 
 import (
-	core "smartpentestutility/core"
+	"clip/core"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
