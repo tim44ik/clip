@@ -3,6 +3,7 @@ package core
 import (
 	"clip/utility"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"image/color"
@@ -17,9 +18,11 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
-	"github.com/ncruces/zenity"
+	"github.com/phpdave11/gofpdf"
 )
 
 type SpuWindow struct {
@@ -31,7 +34,10 @@ type SpuWindow struct {
 
 	Output map[string]string
 
-	makePDF bool
+	makePDF struct {
+		do      bool
+		pdfPath string
+	}
 
 	cancel context.CancelFunc
 
@@ -90,7 +96,7 @@ func (a *SpuWindow) buildWindow(app fyne.App) {
 	a.Elms.threadEntry.Validator = utility.NumberValidator(1, 128)
 
 	a.Elms.vunerabilitiesCheck = widget.NewCheck("Сформировать PDF", func(b bool) {
-		a.makePDF = b
+		a.makePDF.do = b
 	})
 
 	a.Elms.modulesPanel = container.NewVBox()
@@ -155,7 +161,6 @@ func (a *SpuWindow) buildWindow(app fyne.App) {
 			),
 		),
 	)
-
 	a.Window.Resize(fyne.NewSize(900, 600))
 	a.Window.SetOnClosed(func() { a.Window.Close() })
 	a.Elms.activity.Hide()
@@ -173,6 +178,7 @@ func (a *SpuWindow) SelectModule(m *Module) {
 		s = strings.ReplaceAll(s, "\n", " ")
 		return s[:31] + "..."
 	}(m.Name))
+
 	a.Elms.title.Refresh()
 	a.Elms.moduleContentEntry.SetText(m.Content)
 	a.Elms.ModuleOutputEntry.SetText(m.Output)
@@ -203,82 +209,138 @@ func (a *SpuWindow) saveProfile() {
 
 func (a *SpuWindow) saveProfileAs() {
 	a.ApplyModuleChanges()
-	f, err := zenity.SelectFileSave(zenity.Title("Сохраните конфигурацию модулей"),
-		zenity.FileFilters{{Name: "JSON Files", Patterns: []string{"*.json"}}},
-		zenity.ConfirmOverwrite())
 
-	if err != nil {
-		return
-	}
+	filesavedialog := dialog.NewFileSave(
+		func(writer fyne.URIWriteCloser, err error) {
+			if err != nil {
+				return
+			}
+			if writer == nil {
+				return
+			}
+			path := writer.URI().Path()
+			writer.Close()
 
-	err = a.makeJson(f)
-	if err != nil {
-		return
-	}
-	a.Profiles.Exists = true
-	a.Profiles.Path = f
+			err = a.makeJson(path)
+			if err != nil {
+				dialog.ShowError(err, a.Window)
+				return
+			}
 
+			a.Profiles.Exists = true
+			if filepath.Ext(path) != ".json" {
+				defer os.Remove(path)
+			}
+
+		}, a.Window)
+	filesavedialog.SetFilter(storage.NewExtensionFileFilter([]string{".json"}))
+	filesavedialog.Resize(fyne.NewSize(900, 500))
+	filesavedialog.Show()
 }
 
 func (a *SpuWindow) makeJson(filename string) error {
-	if filepath.Ext(filename) != ".json" {
-		filename += ".json"
+	filename = strings.TrimSuffix(filename, filepath.Ext(filename))
+	filename += ".json"
+	for _, m := range a.Modules.ChildModules {
+		m.Output = ""
 	}
+	a.Profiles.Path = filename
 	file, err := os.Create(filename)
 	if err != nil {
 		return err
 	}
-
 	defer file.Close()
+
 	encoder := json.NewEncoder(file)
 	encoder.SetIndent("", " ")
 	return encoder.Encode(a.Modules)
 }
 
 func (a *SpuWindow) loadProfileInNewWindow() {
-	window := CreateWindow()
-	if window.loadProfile() {
-		window.Window.Show()
-	}
+
+	fileOpenDialog := dialog.NewFileOpen(
+		func(reader fyne.URIReadCloser, err error) {
+			if err != nil {
+				dialog.ShowError(err, a.Window)
+				return
+			}
+			if reader == nil {
+				return
+			}
+			newWindow := CreateWindow()
+			filename := reader.URI().Path()
+			reader.Close()
+
+			err = newWindow.readJson(filename)
+			if err != nil {
+				dialog.ShowError(err, a.Window)
+				return
+			}
+
+			newWindow.Profiles.Exists = true
+			newWindow.Profiles.Path = filename
+			newWindow.refreshModuleGui()
+
+			newWindow.Window.Show()
+		},
+		a.Window,
+	)
+
+	fileOpenDialog.SetFilter(storage.NewExtensionFileFilter([]string{".json"}))
+	fileOpenDialog.Resize(fyne.NewSize(900, 500))
+	fileOpenDialog.Show()
 }
 
-func (a *SpuWindow) loadProfile() bool {
-	f, err := zenity.SelectFile(zenity.Title("Загрузите конфигурацию модулей"),
-		zenity.FileFilters{{Name: "JSON Files", Patterns: []string{"*.json"}}})
+func (a *SpuWindow) loadProfile() {
+	fileOpenDialog := dialog.NewFileOpen(
+		func(reader fyne.URIReadCloser, err error) {
+			if err != nil {
+				dialog.ShowError(err, a.Window)
+				return
+			}
+			if reader == nil {
+				return
+			}
 
-	if err != nil {
-		return false
-	}
+			filename := reader.URI().Path()
+			reader.Close()
 
-	err = a.readJson(f)
-	if err != nil {
-		fmt.Println(err)
-		return false
-	}
-	a.Profiles.Exists = true
-	a.Profiles.Path = f
-	a.refreshModuleGui()
-	return true
+			err = a.readJson(filename)
+			if err != nil {
+				dialog.ShowError(err, a.Window)
+				return
+			}
+
+			a.Profiles.Exists = true
+			a.Profiles.Path = filename
+			a.refreshModuleGui()
+		},
+		a.Window,
+	)
+
+	fileOpenDialog.SetFilter(storage.NewExtensionFileFilter([]string{".json"}))
+	fileOpenDialog.Resize(fyne.NewSize(900, 500))
+	fileOpenDialog.Show()
 }
 
-func (a *SpuWindow) readJson(filepath string) error {
-	file, err := os.Open(filepath)
-
+func (a *SpuWindow) readJson(path string) error {
+	file, err := os.Open(path)
 	if err != nil {
 		return err
 	}
-
 	defer file.Close()
+
 	decoder := json.NewDecoder(file)
 	mods := a.Modules
-	e := decoder.Decode(&mods)
-	if e != nil {
+	if e := decoder.Decode(&mods); e != nil {
 		return e
 	}
+
 	a.Modules = mods
 	if a.Modules.MainModule == nil {
 		a.Modules.MainModule = &Module{Name: "Главный"}
 	}
+
 	a.SelectModule(a.Modules.MainModule)
 	return nil
 }
@@ -291,7 +353,7 @@ func (a *SpuWindow) beginScenario() {
 		return
 	}
 	if a.currentScenario != nil {
-		zenity.Info("Сценарий уже запущен", zenity.Title("Ошибка"))
+		dialog.ShowError(fmt.Errorf("Сценарий уже запущен"), a.Window)
 		return
 	}
 
@@ -305,19 +367,8 @@ func (a *SpuWindow) beginScenario() {
 			return
 		}
 	}
-	var f string
-	if a.makePDF {
-		f, err = zenity.SelectFileSave(zenity.Title("Загрузите конфигурацию модулей"),
-			zenity.FileFilters{{Name: "PDF Files", Patterns: []string{"*.pdf"}}}, zenity.ConfirmOverwrite())
-		if err != nil {
-			f = ""
-		}
-	}
 
-	if f == "" {
-		f = strings.TrimSuffix(a.Profiles.Path, ".json") + time.Now().Format(" 02.01.2006 15-04-05") + ".pdf"
-	}
-	scenario := NewScenario(a.Modules.MainModule.Content, t, a.makePDF, f, a.Modules.ChildModules)
+	scenario := NewScenario(a.Modules.MainModule.Content, t, a.Modules.ChildModules)
 	a.currentScenario = scenario
 	a.Elms.ModuleOutputEntry.Text = ""
 	a.Elms.ModuleOutputEntry.Refresh()
@@ -331,7 +382,18 @@ func (a *SpuWindow) beginScenario() {
 		if a.currentScenario == scenario {
 			fyne.DoAndWait(func() { a.Elms.activity.Hide() })
 			a.currentScenario = nil
-			zenity.Info("Выполнение сценария окончено", zenity.Title("Выполнено"))
+
+			if a.makePDF.do {
+				fyne.Do(func() {
+					filesavedialog := dialog.NewFileSave(func(writer fyne.URIWriteCloser, err error) { a.makePDFFile(writer, err) }, a.Window)
+					filesavedialog.SetFilter(storage.NewExtensionFileFilter([]string{".pdf"}))
+					filesavedialog.Resize(fyne.NewSize(900, 500))
+					filesavedialog.Show()
+				})
+			} else {
+				dialog.ShowInformation("Выполнено", "Выполнение сценария окончено", a.Window)
+			}
+
 		}
 	}()
 
@@ -339,7 +401,7 @@ func (a *SpuWindow) beginScenario() {
 
 func (a *SpuWindow) interruptScenario() {
 	if a.currentScenario == nil {
-		zenity.Info("Сценарий не запущен", zenity.Title("Ошибка"))
+		dialog.ShowError(fmt.Errorf("Сценарий не запущен"), a.Window)
 		return
 	}
 	if a.cancel != nil {
@@ -348,7 +410,7 @@ func (a *SpuWindow) interruptScenario() {
 	}
 	a.currentScenario = nil
 	a.Elms.activity.Hide()
-	zenity.Info("Выполнение сценария прервано", zenity.Title("Прервано"))
+	dialog.ShowInformation("Прервано", "Выполнение сценария прервано", a.Window)
 }
 
 func (a *SpuWindow) delete() {
@@ -364,35 +426,76 @@ func (a *SpuWindow) delete() {
 
 func (a *SpuWindow) alter() {
 	a.ApplyModuleChanges()
-	ShowModuleAlteringDialog(a.selectedModule, func(m *Module) {
-		if m == a.Modules.MainModule {
-			return
-		}
-		if m.Name == "" {
-			return
-		}
-		if m.Name == a.selectedModule.Name {
-			return
-		}
-		a.Modules.ChildModules[slices.Index(a.Modules.ChildModules, a.selectedModule)] = m
-		a.selectedModule = m
-		a.Elms.title.Text = fmt.Sprintf("Модуль '%s'", m.Name)
-		a.Elms.title.Refresh()
-		a.refreshModuleGui()
-	})
+	input := widget.NewMultiLineEntry()
+	input.SetText(a.selectedModule.Name)
+	scroll := container.NewVScroll(input)
+	scroll.ScrollToBottom()
+	addmoduleDialog := dialog.NewCustomConfirm(
+		"Добавление нового модуля",
+		"OK",
+		"Отмена",
+		container.NewPadded(
+			container.NewBorder(
+				canvas.NewText("Введите название нового модуля", color.Black),
+				nil, nil, nil, scroll,
+			),
+		), func(b bool) {
+			if b {
+				if input.Text == "" {
+					return
+				}
+				m := &Module{
+					Name:    input.Text,
+					Content: a.selectedModule.Content,
+					Output:  a.selectedModule.Output,
+				}
+				a.Modules.ChildModules[slices.Index(a.Modules.ChildModules, a.selectedModule)] = m
+				a.selectedModule = m
+				a.Elms.title.Text = fmt.Sprintf("Модуль '%s'", m.Name)
+				a.Elms.title.Refresh()
+				a.refreshModuleGui()
+			} else {
+				return
+			}
+		}, a.Window)
+	addmoduleDialog.Resize(fyne.NewSize(500, 300))
+	addmoduleDialog.Show()
 }
 
 func (a *SpuWindow) addModule() {
 	a.ApplyModuleChanges()
-	ShowModuleCreationDialog(func(m *Module) {
-		if m.Name == "" {
-			return
-		}
-		a.Modules.ChildModules = append(a.Modules.ChildModules, m)
-		a.Elms.modulesPanel.Add(a.createModuleButton(m))
-		a.Elms.modulesPanel.Refresh()
-		a.SelectModule(m)
-	})
+	input := widget.NewMultiLineEntry()
+	scroll := container.NewVScroll(input)
+	scroll.ScrollToBottom()
+	addmoduleDialog := dialog.NewCustomConfirm(
+		"Добавление нового модуля",
+		"OK",
+		"Отмена",
+		container.NewPadded(
+			container.NewBorder(
+				canvas.NewText("Введите название нового модуля", color.Black),
+				nil, nil, nil, scroll,
+			),
+		), func(b bool) {
+			if b {
+				if input.Text == "" {
+					return
+				}
+				m := &Module{
+					Name:    input.Text,
+					Content: "",
+					Output:  "",
+				}
+				a.Modules.ChildModules = append(a.Modules.ChildModules, m)
+				a.Elms.modulesPanel.Add(a.createModuleButton(m))
+				a.Elms.modulesPanel.Refresh()
+				a.SelectModule(m)
+			} else {
+				return
+			}
+		}, a.Window)
+	addmoduleDialog.Resize(fyne.NewSize(500, 300))
+	addmoduleDialog.Show()
 }
 
 func (a *SpuWindow) selectMainModule() {
@@ -446,5 +549,54 @@ func (a *SpuWindow) addModuleOutput(module *Module, line string) {
 		a.Elms.ModuleOutputEntry.Text += line
 		a.Elms.ModuleOutputEntry.CursorRow = strings.Count(module.Output, "\n")
 		a.Elms.ModuleOutputEntry.Refresh()
+	}
+}
+
+func (a *SpuWindow) makePDFFile(writer fyne.URIWriteCloser, err error) {
+	if err != nil || writer == nil {
+		return
+	}
+
+	path := writer.URI().Path()
+	if filepath.Ext(path) != ".pdf" {
+		defer os.Remove(path)
+	}
+
+	a.makePDF.pdfPath = path
+	a.makePDF.pdfPath = strings.TrimSuffix(a.makePDF.pdfPath, filepath.Ext(a.makePDF.pdfPath))
+	a.makePDF.pdfPath += ".pdf"
+
+	if filepath.Base(a.makePDF.pdfPath) == ".pdf" {
+		a.makePDF.pdfPath = strings.TrimSuffix(a.Profiles.Path, ".json") + time.Now().Format(" 02.01.2006 15-04-05") + a.makePDF.pdfPath
+	}
+	a.PDF()
+
+}
+
+//go:embed TimesNewRoman.ttf
+var tnrFont []byte
+
+//go:embed TimesNewRomanB.ttf
+var tnrbFont []byte
+
+func (a *SpuWindow) PDF() {
+	pdf := gofpdf.New("P", "mm", "A4", "")
+	pdf.AddUTF8FontFromBytes("TimesNewRoman", "", tnrFont)
+	pdf.AddUTF8FontFromBytes("TimesNewRoman", "B", tnrbFont)
+	pdf.AddPage()
+	pdf.SetFont("TimesNewRoman", "", 22)
+	pdf.SetTextColor(0, 0, 0)
+	for _, m := range a.Modules.ChildModules {
+		pdf.SetFontSize(22)
+		pdf.SetFontStyle("B")
+		pdf.Cell(0, 10, m.Name)
+		pdf.Ln(15)
+		pdf.SetFontSize(14)
+		pdf.SetFontStyle("")
+		pdf.MultiCell(0, 10, m.Output, "0", "L", false)
+	}
+	e := pdf.OutputFileAndClose(a.makePDF.pdfPath)
+	if e != nil {
+		dialog.ShowError(fmt.Errorf("Ошибка формирования PDF:\n%s", e), a.Window)
 	}
 }
