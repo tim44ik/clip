@@ -7,7 +7,6 @@ import (
 	"io"
 	"runtime"
 	"strconv"
-	"time"
 
 	"golang.org/x/text/encoding/charmap"
 	"golang.org/x/text/transform"
@@ -36,7 +35,7 @@ func WrapReaderToChannel(reader io.Reader) (ch chan string, free func()) {
 				if doFree {
 					return
 				}
-				time.Sleep(time.Second / 25)
+
 				continue
 			}
 			if runtime.GOOS == "windows" {

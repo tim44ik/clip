@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
@@ -104,9 +105,14 @@ func (r *Runtime) Execute(code string, ctx context.Context, outputter func(strin
 			return s
 		})
 		if runtime.GOOS != "windows" {
-			writeStdIn("echo ] " + strings.ReplaceAll(line, ">", "]") + "\n")
+			writeStdIn("echo \">" + line + "\"\n")
 		}
-		writeStdIn(line + "\n")
+		if strings.HasPrefix(line, "@") {
+			basePath, _ := os.Executable()
+			writeStdIn(filepath.Dir(basePath) + "/proxyprogram " + line[1:] + "\n")
+		} else {
+			writeStdIn(line + "\n")
+		}
 	}
 	writeStdIn("exit\n")
 	waitCh := make(chan struct{}, 1)

@@ -139,7 +139,10 @@ func (a *SpuWindow) buildWindow(app fyne.App) {
 
 					container.NewVScroll(
 						container.NewVBox(
-							widget.NewButton("Главный", func() { a.selectMainModule() }),
+							widget.NewButton("Главный", func() {
+								a.ApplyModuleChanges()
+								a.selectMainModule()
+							}),
 							a.Elms.modulesPanel,
 							widget.NewButton("Добавить модуль", func() { a.addModule() }),
 						),
@@ -167,7 +170,7 @@ func (a *SpuWindow) buildWindow(app fyne.App) {
 }
 
 func (a *SpuWindow) SelectModule(m *Module) {
-	a.ApplyModuleChanges()
+
 	a.selectedModule = m
 	a.Elms.title.Text = fmt.Sprintf("Модуль '%s'", func(s string) string {
 		if !strings.Contains(s, "\n") && len(s) < 30 {
@@ -241,9 +244,12 @@ func (a *SpuWindow) saveProfileAs() {
 func (a *SpuWindow) makeJson(filename string) error {
 	filename = strings.TrimSuffix(filename, filepath.Ext(filename))
 	filename += ".json"
+	var outputarray []string
 	for _, m := range a.Modules.ChildModules {
+		outputarray = append(outputarray, m.Output)
 		m.Output = ""
 	}
+	defer a.restoreOutput(outputarray)
 	a.Profiles.Path = filename
 	file, err := os.Create(filename)
 	if err != nil {
@@ -254,6 +260,12 @@ func (a *SpuWindow) makeJson(filename string) error {
 	encoder := json.NewEncoder(file)
 	encoder.SetIndent("", " ")
 	return encoder.Encode(a.Modules)
+}
+
+func (a *SpuWindow) restoreOutput(outputarray []string) {
+	for i, m := range a.Modules.ChildModules {
+		m.Output = outputarray[i]
+	}
 }
 
 func (a *SpuWindow) loadProfileInNewWindow() {
@@ -340,7 +352,6 @@ func (a *SpuWindow) readJson(path string) error {
 	if a.Modules.MainModule == nil {
 		a.Modules.MainModule = &Module{Name: "Главный"}
 	}
-
 	a.SelectModule(a.Modules.MainModule)
 	return nil
 }
@@ -489,6 +500,7 @@ func (a *SpuWindow) addModule() {
 				a.Modules.ChildModules = append(a.Modules.ChildModules, m)
 				a.Elms.modulesPanel.Add(a.createModuleButton(m))
 				a.Elms.modulesPanel.Refresh()
+				a.ApplyModuleChanges()
 				a.SelectModule(m)
 			} else {
 				return
@@ -523,7 +535,11 @@ func (a *SpuWindow) createModuleButton(m *Module) fyne.Widget {
 			return s
 		}(m.Name), func() { a.SelectModule(m) })
 	}
-	return widget.NewButton(m.Name, func() { a.SelectModule(m) })
+	return widget.NewButton(m.Name,
+		func() {
+			a.ApplyModuleChanges()
+			a.SelectModule(m)
+		})
 }
 
 func (a *SpuWindow) refreshModuleGui() {
