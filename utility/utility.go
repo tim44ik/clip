@@ -13,6 +13,8 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/widget"
+
+	ansi "github.com/leaanthony/go-ansi-parser"
 )
 
 type WrappedReader struct {
@@ -41,10 +43,10 @@ func WrapReaderToChannel(reader io.Reader) (ch chan string, free func()) {
 			if runtime.GOOS == "windows" {
 				reader := transform.NewReader(bytes.NewReader(buff[:n]), charmap.CodePage866.NewDecoder())
 				bytes, _ := io.ReadAll(reader)
-				outputString = string(bytes)
+				outputString, _ = ansi.Cleanse(string(bytes))
 
 			} else {
-				outputString = string(buff[:n])
+				outputString, _ = ansi.Cleanse(string(buff[:n]))
 			}
 			ch <- outputString
 		}

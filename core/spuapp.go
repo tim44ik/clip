@@ -32,8 +32,6 @@ type SpuWindow struct {
 
 	currentScenario *Scenario
 
-	Output map[string]string
-
 	makePDF struct {
 		do      bool
 		pdfPath string
@@ -51,7 +49,6 @@ type SpuWindow struct {
 		bottomPanelCheckboxes *fyne.Container
 		bottomPanelButtons    *fyne.Container
 		activity              *widget.Activity
-		menu                  *fyne.MainMenu
 
 		ModuleOutputEntryMutex sync.Mutex
 	}
@@ -84,7 +81,7 @@ func (a *SpuWindow) buildWindow(app fyne.App) {
 	a.Elms.title.TextSize = 16
 
 	a.Elms.moduleContentEntry = widget.NewMultiLineEntry()
-	a.Elms.moduleContentEntry.SetPlaceHolder("Команды и переменные для использования во всез модулях")
+	a.Elms.moduleContentEntry.SetPlaceHolder("")
 
 	a.Elms.ModuleOutputEntry = widget.NewMultiLineEntry()
 	a.Elms.ModuleOutputEntry.Disable()
@@ -124,7 +121,7 @@ func (a *SpuWindow) buildWindow(app fyne.App) {
 					fyne.NewMenuItem("Прервать выполнение сценария", func() { a.interruptScenario() }),
 				)),
 				utility.NewDropButton(theme.CancelIcon(), a.Window.Canvas(), fyne.NewMenu("Выход",
-					fyne.NewMenuItem("Начать выполнение сценария", func() { a.Window.Close() }),
+					fyne.NewMenuItem("Выход", func() { a.Window.Close() }),
 				)),
 			),
 			nil, nil, nil,
@@ -563,7 +560,7 @@ func (a *SpuWindow) addModuleOutput(module *Module, line string) {
 		a.Elms.ModuleOutputEntryMutex.Lock()
 		defer a.Elms.ModuleOutputEntryMutex.Unlock()
 		a.Elms.ModuleOutputEntry.Text += line
-		a.Elms.ModuleOutputEntry.CursorRow = strings.Count(module.Output, "\n")
+		a.Elms.ModuleOutputEntry.CursorRow = strings.LastIndexAny(module.Output, "\n")
 		a.Elms.ModuleOutputEntry.Refresh()
 	}
 }

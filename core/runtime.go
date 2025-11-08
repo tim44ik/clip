@@ -54,8 +54,7 @@ func (r *Runtime) Execute(code string, ctx context.Context, outputter func(strin
 		path = "/bin/bash"
 	}
 	proc, e := os.StartProcess(path, nil, &os.ProcAttr{
-		Files: []*os.File{stdInR, stdOutW, stdErrW},
-	})
+		Files: []*os.File{stdInR, stdOutW, stdErrW}})
 	if e != nil {
 		return e
 	}
@@ -83,6 +82,7 @@ func (r *Runtime) Execute(code string, ctx context.Context, outputter func(strin
 
 	for line := range strings.SplitSeq(code, "\n") {
 		if utility.IsCanceled(ctx) {
+			writeStdIn("exit\n")
 			return fmt.Errorf("Отменено")
 		}
 
@@ -104,9 +104,6 @@ func (r *Runtime) Execute(code string, ctx context.Context, outputter func(strin
 			}
 			return s
 		})
-		if runtime.GOOS != "windows" {
-			writeStdIn("echo \">" + line + "\"\n")
-		}
 		if strings.HasPrefix(line, "@") {
 			basePath, _ := os.Executable()
 			writeStdIn(filepath.Dir(basePath) + "/proxyprogram " + line[1:] + "\n")
