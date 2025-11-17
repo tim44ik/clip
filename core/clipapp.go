@@ -140,8 +140,6 @@ func (a *SpuWindow) buildWindow(app fyne.App) {
 
 	a.Elms.ModuleOutputEntry = widget.NewMultiLineEntry()
 	a.Elms.ModuleOutputEntry.Disable()
-	scroll := container.NewVScroll(a.Elms.ModuleOutputEntry)
-	scroll.ScrollToBottom()
 
 	a.Elms.threadEntry = widget.NewEntry()
 	a.Elms.threadEntry.SetPlaceHolder(a.langmap[a.Modules.CurrentLang][1])
@@ -217,7 +215,7 @@ func (a *SpuWindow) buildWindow(app fyne.App) {
 						),
 						nil,
 						nil,
-						container.NewGridWithRows(2, a.Elms.moduleContentEntry, scroll),
+						container.NewGridWithRows(2, a.Elms.moduleContentEntry, a.Elms.ModuleOutputEntry),
 					),
 				),
 			),
@@ -247,7 +245,7 @@ func (a *SpuWindow) SelectModule(m *Module) {
 	a.Elms.ModuleOutputEntry.Hidden = m == a.Modules.MainModule
 	a.Elms.bottomPanelButtons.Hidden = m == a.Modules.MainModule
 	a.Elms.ModuleOutputEntry.SetText(m.Output)
-	a.Elms.ModuleOutputEntry.CursorRow = strings.Count(m.Output, "\n")
+	a.Elms.ModuleOutputEntry.CursorRow = strings.LastIndexAny(m.Output, "\n")
 	a.Elms.ModuleOutputEntry.Refresh()
 	a.Elms.bottomPanelCheckboxes.Refresh()
 }
@@ -417,9 +415,6 @@ func (a *SpuWindow) readJson(path string) error {
 }
 
 func (a *SpuWindow) beginScenario() {
-	a.ApplyModuleChanges()
-	ctx, cancel := context.WithCancel(context.Background())
-	a.cancel = cancel
 	if len(a.Modules.ChildModules) == 0 {
 		return
 	}
@@ -427,6 +422,9 @@ func (a *SpuWindow) beginScenario() {
 		dialog.ShowError(fmt.Errorf("%s", a.langmap[a.Modules.CurrentLang][16]), a.Window)
 		return
 	}
+	a.ApplyModuleChanges()
+	ctx, cancel := context.WithCancel(context.Background())
+	a.cancel = cancel
 
 	var t int
 	var err error
