@@ -32,6 +32,8 @@ type SpuWindow struct {
 
 	currentScenario *Scenario
 
+	langmap map[string][]string
+
 	makePDF struct {
 		do      bool
 		pdfPath string
@@ -40,20 +42,21 @@ type SpuWindow struct {
 	cancel context.CancelFunc
 
 	Elms struct {
-		title                 *canvas.Text
-		vunerabilitiesCheck   *widget.Check
-		threadEntry           *widget.Entry
-		moduleContentEntry    *widget.Entry
-		ModuleOutputEntry     *widget.Entry
-		modulesPanel          *fyne.Container
-		bottomPanelCheckboxes *fyne.Container
-		bottomPanelButtons    *fyne.Container
-		activity              *widget.Activity
-
+		title                  *canvas.Text
+		threadEntry            *widget.Entry
+		moduleContentEntry     *widget.Entry
+		ModuleOutputEntry      *widget.Entry
+		modulesPanel           *fyne.Container
+		bottomPanelCheckboxes  *fyne.Container
+		bottomPanelButtons     *fyne.Container
+		activity               *widget.Activity
+		mainButton             *fyne.Container
+		addButton              *fyne.Container
 		ModuleOutputEntryMutex sync.Mutex
 	}
 
 	Modules struct {
+		CurrentLang  string    `json:"CurrentLang"`
 		MainModule   *Module   `json:"MainModule"`
 		ChildModules []*Module `json:"ChildModules"`
 	}
@@ -66,7 +69,59 @@ type SpuWindow struct {
 
 func CreateWindow() (a *SpuWindow) {
 	a = &SpuWindow{}
-	a.Modules.MainModule = &Module{Name: "Главный"}
+	a.langmap = make(map[string][]string)
+	a.langmap["English"] =
+		[]string{"Main",
+			"Threads Number",
+			"Make PDF report       ",
+			"Edit", "Delete",
+			"Load", "Load in new window",
+			"Save", "Save as",
+			"Begin scenario", "Break scenario",
+			"Break scenario and make PDF",
+			"Change language", "Exit",
+			"Add module", "Module", "Scenario is already started",
+			"Completed", "Scenario execution completed",
+			"Scenario was not started",
+			"Interrupted", "Scenario execution was interrupted",
+			"Alter module name", "OK", "Cancel",
+			"Enter new module name",
+			"Add new module", "Cancelled",
+			"Error occured while making PDF",
+			"Change language", "Apply",
+			"Choose language"}
+
+	a.langmap["Русский"] =
+		[]string{"Главная",
+			"Количество потоков",
+			"Сформировать PDF отчёт",
+			"Изменить", "Удалить",
+			"Загрузить",
+			"Загрузить в новом окне",
+			"Сохранить", "Сохранить как",
+			"Начать сценарий",
+			"Прервать сценарий",
+			"Прервать сценарий и сформировать отчёт в PDF",
+			"Изменить язык", "Выйти",
+			"Добавить модуль", "Модуль",
+			"Сценарий уже запущен",
+			"Выполнено",
+			"Выполнение сценария окончено",
+			"Сценарий не запущен",
+			"Прервано",
+			"Выполнение сценария было прервано",
+			"Изменить название модуля", "OK",
+			"Отмена", "Введите название",
+			"Добавить новый модуль", "Отменено",
+			"Ошибка при создании PDF",
+			"Изменить язык", "Применить",
+			"Выберите язык"}
+
+	if a.Modules.CurrentLang == "" {
+		a.Modules.CurrentLang = "Русский"
+	}
+
+	a.Modules.MainModule = &Module{Name: a.langmap[a.Modules.CurrentLang][0]}
 
 	a.Profiles.Exists = false
 	a.buildWindow(fyne.CurrentApp())
@@ -77,7 +132,7 @@ func CreateWindow() (a *SpuWindow) {
 
 func (a *SpuWindow) buildWindow(app fyne.App) {
 	a.Window = app.NewWindow("clip")
-	a.Elms.title = canvas.NewText("", color.Black)
+	a.Elms.title = canvas.NewText(a.langmap[a.Modules.CurrentLang][0], color.Black)
 	a.Elms.title.TextSize = 16
 
 	a.Elms.moduleContentEntry = widget.NewMultiLineEntry()
@@ -89,39 +144,49 @@ func (a *SpuWindow) buildWindow(app fyne.App) {
 	scroll.ScrollToBottom()
 
 	a.Elms.threadEntry = widget.NewEntry()
-	a.Elms.threadEntry.SetPlaceHolder("Потоки")
+	a.Elms.threadEntry.SetPlaceHolder(a.langmap[a.Modules.CurrentLang][1])
 	a.Elms.threadEntry.Validator = utility.NumberValidator(1, 128)
-
-	a.Elms.vunerabilitiesCheck = widget.NewCheck("Сформировать PDF", func(b bool) {
-		a.makePDF.do = b
-	})
 
 	a.Elms.modulesPanel = container.NewVBox()
 
 	a.Elms.bottomPanelCheckboxes = container.NewVBox(
-		container.NewVBox(a.Elms.vunerabilitiesCheck, a.Elms.threadEntry),
+		container.NewVBox(widget.NewCheck(a.langmap[a.Modules.CurrentLang][2], func(b bool) {
+			a.makePDF.do = b
+		}), a.Elms.threadEntry),
 	)
 
-	a.Elms.bottomPanelButtons = container.NewVBox(widget.NewButton("Изменить", func() { a.alter() }),
-		widget.NewButton("Удалить", func() { a.delete() }))
+	a.Elms.bottomPanelButtons = container.NewVBox(
+		widget.NewButton(a.langmap[a.Modules.CurrentLang][3], func() { a.alter() }),
+		widget.NewButton(a.langmap[a.Modules.CurrentLang][4], func() { a.delete() }))
 
 	a.Elms.activity = widget.NewActivity()
+	a.Elms.mainButton = container.NewVBox(widget.NewButton(a.langmap[a.Modules.CurrentLang][0], func() {
+		a.ApplyModuleChanges()
+		a.selectMainModule()
+	}))
+	a.Elms.addButton = container.NewVBox(widget.NewButton(a.langmap[a.Modules.CurrentLang][14], func() { a.addModule() }))
 
 	a.Window.SetContent(
 		container.NewBorder(
 			container.NewHBox(
-				utility.NewDropButton(theme.FolderOpenIcon(), a.Window.Canvas(), fyne.NewMenu("Профиль",
-					fyne.NewMenuItem("Загрузить", func() { a.loadProfile() }),
-					fyne.NewMenuItem("Загрузить в новом окне", func() { a.loadProfileInNewWindow() }),
-					fyne.NewMenuItem("Сохранить", func() { a.saveProfile() }),
-					fyne.NewMenuItem("Сохранить как", func() { a.saveProfileAs() }),
+				utility.NewDropButton(theme.FolderOpenIcon(), a.Window.Canvas(), fyne.NewMenu("Profiles",
+					fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][5], func() { a.loadProfile() }),
+					fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][6], func() { a.loadProfileInNewWindow() }),
+					fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][7], func() { a.saveProfile() }),
+					fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][8], func() { a.saveProfileAs() }),
 				)),
-				utility.NewDropButton(theme.MediaPlayIcon(), a.Window.Canvas(), fyne.NewMenu("Сценарий",
-					fyne.NewMenuItem("Начать выполнение сценария", func() { a.beginScenario() }),
-					fyne.NewMenuItem("Прервать выполнение сценария", func() { a.interruptScenario() }),
+				utility.NewDropButton(theme.MediaPlayIcon(), a.Window.Canvas(), fyne.NewMenu("Scenario",
+					fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][9], func() { a.beginScenario() }),
+					fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][10], func() { a.interruptScenario() }),
+					fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][11], func() {
+						a.interruptScenario()
+						a.PDFcreationWindow()
+					}),
 				)),
-				utility.NewDropButton(theme.CancelIcon(), a.Window.Canvas(), fyne.NewMenu("Выход",
-					fyne.NewMenuItem("Выход", func() { a.Window.Close() }),
+				utility.NewDropButton(theme.SettingsIcon(), a.Window.Canvas(), fyne.NewMenu("Change Language",
+					fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][12], func() { a.changeLanguageWindow() }))),
+				utility.NewDropButton(theme.CancelIcon(), a.Window.Canvas(), fyne.NewMenu("Quit",
+					fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][13], func() { a.Window.Close() }),
 				)),
 			),
 			nil, nil, nil,
@@ -136,12 +201,9 @@ func (a *SpuWindow) buildWindow(app fyne.App) {
 
 					container.NewVScroll(
 						container.NewVBox(
-							widget.NewButton("Главный", func() {
-								a.ApplyModuleChanges()
-								a.selectMainModule()
-							}),
+							a.Elms.mainButton,
 							a.Elms.modulesPanel,
-							widget.NewButton("Добавить модуль", func() { a.addModule() }),
+							a.Elms.addButton,
 						),
 					),
 				),
@@ -169,7 +231,7 @@ func (a *SpuWindow) buildWindow(app fyne.App) {
 func (a *SpuWindow) SelectModule(m *Module) {
 
 	a.selectedModule = m
-	a.Elms.title.Text = fmt.Sprintf("Модуль '%s'", func(s string) string {
+	a.Elms.title.Text = fmt.Sprintf("%s '%s'", a.langmap[a.Modules.CurrentLang][15], func(s string) string {
 		if !strings.Contains(s, "\n") && len(s) < 30 {
 			return s
 		} else if len(s) > 30 {
@@ -276,6 +338,7 @@ func (a *SpuWindow) loadProfileInNewWindow() {
 			if reader == nil {
 				return
 			}
+
 			newWindow := CreateWindow()
 			filename := reader.URI().Path()
 			reader.Close()
@@ -288,7 +351,7 @@ func (a *SpuWindow) loadProfileInNewWindow() {
 
 			newWindow.Profiles.Exists = true
 			newWindow.Profiles.Path = filename
-			newWindow.refreshModuleGui()
+			newWindow.fullrefresh()
 
 			newWindow.Window.Show()
 		},
@@ -347,7 +410,7 @@ func (a *SpuWindow) readJson(path string) error {
 
 	a.Modules = mods
 	if a.Modules.MainModule == nil {
-		a.Modules.MainModule = &Module{Name: "Главный"}
+		a.Modules.MainModule = &Module{Name: a.langmap[a.Modules.CurrentLang][1]}
 	}
 	a.SelectModule(a.Modules.MainModule)
 	return nil
@@ -361,7 +424,7 @@ func (a *SpuWindow) beginScenario() {
 		return
 	}
 	if a.currentScenario != nil {
-		dialog.ShowError(fmt.Errorf("Сценарий уже запущен"), a.Window)
+		dialog.ShowError(fmt.Errorf("%s", a.langmap[a.Modules.CurrentLang][16]), a.Window)
 		return
 	}
 
@@ -393,13 +456,10 @@ func (a *SpuWindow) beginScenario() {
 
 			if a.makePDF.do {
 				fyne.Do(func() {
-					filesavedialog := dialog.NewFileSave(func(writer fyne.URIWriteCloser, err error) { a.makePDFFile(writer, err) }, a.Window)
-					filesavedialog.SetFilter(storage.NewExtensionFileFilter([]string{".pdf"}))
-					filesavedialog.Resize(fyne.NewSize(900, 500))
-					filesavedialog.Show()
+
 				})
 			} else {
-				dialog.ShowInformation("Выполнено", "Выполнение сценария окончено", a.Window)
+				dialog.ShowInformation(a.langmap[a.Modules.CurrentLang][17], a.langmap[a.Modules.CurrentLang][18], a.Window)
 			}
 
 		}
@@ -409,7 +469,7 @@ func (a *SpuWindow) beginScenario() {
 
 func (a *SpuWindow) interruptScenario() {
 	if a.currentScenario == nil {
-		dialog.ShowError(fmt.Errorf("Сценарий не запущен"), a.Window)
+		dialog.ShowError(fmt.Errorf("%s", a.langmap[a.Modules.CurrentLang][19]), a.Window)
 		return
 	}
 	if a.cancel != nil {
@@ -418,7 +478,7 @@ func (a *SpuWindow) interruptScenario() {
 	}
 	a.currentScenario = nil
 	a.Elms.activity.Hide()
-	dialog.ShowInformation("Прервано", "Выполнение сценария прервано", a.Window)
+	dialog.ShowInformation(a.langmap[a.Modules.CurrentLang][20], a.langmap[a.Modules.CurrentLang][21], a.Window)
 }
 
 func (a *SpuWindow) delete() {
@@ -439,12 +499,12 @@ func (a *SpuWindow) alter() {
 	scroll := container.NewVScroll(input)
 	scroll.ScrollToBottom()
 	addmoduleDialog := dialog.NewCustomConfirm(
-		"Добавление нового модуля",
-		"OK",
-		"Отмена",
+		a.langmap[a.Modules.CurrentLang][22],
+		a.langmap[a.Modules.CurrentLang][23],
+		a.langmap[a.Modules.CurrentLang][24],
 		container.NewPadded(
 			container.NewBorder(
-				canvas.NewText("Введите название нового модуля", color.Black),
+				canvas.NewText(a.langmap[a.Modules.CurrentLang][25], color.Black),
 				nil, nil, nil, scroll,
 			),
 		), func(b bool) {
@@ -459,7 +519,7 @@ func (a *SpuWindow) alter() {
 				}
 				a.Modules.ChildModules[slices.Index(a.Modules.ChildModules, a.selectedModule)] = m
 				a.selectedModule = m
-				a.Elms.title.Text = fmt.Sprintf("Модуль '%s'", m.Name)
+				a.Elms.title.Text = fmt.Sprintf("%s '%s'", a.langmap[a.Modules.CurrentLang][15], m.Name)
 				a.Elms.title.Refresh()
 				a.refreshModuleGui()
 			} else {
@@ -476,12 +536,12 @@ func (a *SpuWindow) addModule() {
 	scroll := container.NewVScroll(input)
 	scroll.ScrollToBottom()
 	addmoduleDialog := dialog.NewCustomConfirm(
-		"Добавление нового модуля",
-		"OK",
-		"Отмена",
+		a.langmap[a.Modules.CurrentLang][26],
+		a.langmap[a.Modules.CurrentLang][23],
+		a.langmap[a.Modules.CurrentLang][24],
 		container.NewPadded(
 			container.NewBorder(
-				canvas.NewText("Введите название нового модуля", color.Black),
+				canvas.NewText(a.langmap[a.Modules.CurrentLang][25], color.Black),
 				nil, nil, nil, scroll,
 			),
 		), func(b bool) {
@@ -545,15 +605,14 @@ func (a *SpuWindow) refreshModuleGui() {
 		a.Elms.modulesPanel.Add(a.createModuleButton(m))
 	}
 	a.Elms.modulesPanel.Refresh()
-
 	a.Elms.moduleContentEntry.SetText(a.selectedModule.Content)
 	a.Elms.ModuleOutputEntry.SetText(a.selectedModule.Output)
 }
 
 func (a *SpuWindow) addModuleOutput(module *Module, line string) {
-	if line == "Отменено" && module == a.selectedModule {
+	if line == a.langmap[a.Modules.CurrentLang][27] && module == a.selectedModule {
 		module.Output += line
-	} else if line != "Отменено" {
+	} else if line != a.langmap[a.Modules.CurrentLang][27] {
 		module.Output += line
 	}
 	if module == a.selectedModule {
@@ -563,6 +622,16 @@ func (a *SpuWindow) addModuleOutput(module *Module, line string) {
 		a.Elms.ModuleOutputEntry.CursorRow = strings.LastIndexAny(module.Output, "\n")
 		a.Elms.ModuleOutputEntry.Refresh()
 	}
+}
+
+func (a *SpuWindow) PDFcreationWindow() {
+	filesavedialog := dialog.NewFileSave(
+		func(writer fyne.URIWriteCloser, err error) {
+			a.makePDFFile(writer, err)
+		}, a.Window)
+	filesavedialog.SetFilter(storage.NewExtensionFileFilter([]string{".pdf"}))
+	filesavedialog.Resize(fyne.NewSize(900, 500))
+	filesavedialog.Show()
 }
 
 func (a *SpuWindow) makePDFFile(writer fyne.URIWriteCloser, err error) {
@@ -610,6 +679,60 @@ func (a *SpuWindow) PDF() {
 	}
 	e := pdf.OutputFileAndClose(a.makePDF.pdfPath)
 	if e != nil {
-		dialog.ShowError(fmt.Errorf("Ошибка формирования PDF:\n%s", e), a.Window)
+		dialog.ShowError(fmt.Errorf("%s:\n%s", a.langmap[a.Modules.CurrentLang][28], e), a.Window)
 	}
+}
+
+func (a *SpuWindow) changeLanguageWindow() {
+	options := []string{"English", "Русский"}
+	dropoutMenu := widget.NewSelectEntry(options)
+	langwindow := dialog.NewCustomConfirm(a.langmap[a.Modules.CurrentLang][29], a.langmap[a.Modules.CurrentLang][30], a.langmap[a.Modules.CurrentLang][24],
+		container.NewBorder(
+			container.NewVBox(canvas.NewText(a.langmap[a.Modules.CurrentLang][31], color.Black), dropoutMenu),
+			nil, nil, nil,
+		), func(b bool) {
+			if slices.Contains(options, dropoutMenu.Text) {
+				a.Modules.CurrentLang = dropoutMenu.Text
+				a.fullrefresh()
+			}
+		},
+		a.Window,
+	)
+	langwindow.Resize(fyne.NewSize(500, 100))
+	langwindow.Show()
+}
+
+func (a *SpuWindow) fullrefresh() {
+	a.Modules.MainModule.Name = a.langmap[a.Modules.CurrentLang][0]
+	a.refreshModuleGui()
+
+	a.Elms.title.Text = fmt.Sprintf("%s '%s'", a.langmap[a.Modules.CurrentLang][15], func(s string) string {
+		if !strings.Contains(s, "\n") && len(s) < 30 {
+			return s
+		} else if len(s) > 30 {
+			return s[:31] + "..."
+		}
+		s = strings.ReplaceAll(s, "\n", " ")
+		return s[:31] + "..."
+	}(a.selectedModule.Name))
+
+	a.Elms.bottomPanelButtons.RemoveAll()
+	a.Elms.bottomPanelButtons.Add(widget.NewButton(a.langmap[a.Modules.CurrentLang][3], func() { a.alter() }))
+	a.Elms.bottomPanelButtons.Add(widget.NewButton(a.langmap[a.Modules.CurrentLang][4], func() { a.delete() }))
+
+	a.Elms.threadEntry = widget.NewEntry()
+	a.Elms.threadEntry.SetPlaceHolder(a.langmap[a.Modules.CurrentLang][1])
+	a.Elms.threadEntry.Validator = utility.NumberValidator(1, 128)
+	a.Elms.bottomPanelCheckboxes.RemoveAll()
+	a.Elms.bottomPanelCheckboxes.Add(container.NewVBox(widget.NewCheck(a.langmap[a.Modules.CurrentLang][2], func(b bool) {
+		a.makePDF.do = b
+	})))
+	a.Elms.mainButton.RemoveAll()
+	a.Elms.bottomPanelCheckboxes.Add(a.Elms.threadEntry)
+	a.Elms.mainButton.Add(widget.NewButton(a.langmap[a.Modules.CurrentLang][0], func() {
+		a.ApplyModuleChanges()
+		a.selectMainModule()
+	}))
+	a.Elms.addButton.RemoveAll()
+	a.Elms.addButton.Add(widget.NewButton(a.langmap[a.Modules.CurrentLang][14], func() { a.addModule() }))
 }
