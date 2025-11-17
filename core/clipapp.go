@@ -49,6 +49,7 @@ type SpuWindow struct {
 		modulesPanel           *fyne.Container
 		bottomPanelCheckboxes  *fyne.Container
 		bottomPanelButtons     *fyne.Container
+		topPanel               *fyne.Container
 		activity               *widget.Activity
 		mainButton             *fyne.Container
 		addButton              *fyne.Container
@@ -118,7 +119,7 @@ func CreateWindow() (a *SpuWindow) {
 			"Выберите язык"}
 
 	if a.Modules.CurrentLang == "" {
-		a.Modules.CurrentLang = "Русский"
+		a.Modules.CurrentLang = "English"
 	}
 
 	a.Modules.MainModule = &Module{Name: a.langmap[a.Modules.CurrentLang][0]}
@@ -164,29 +165,31 @@ func (a *SpuWindow) buildWindow(app fyne.App) {
 	}))
 	a.Elms.addButton = container.NewVBox(widget.NewButton(a.langmap[a.Modules.CurrentLang][14], func() { a.addModule() }))
 
+	a.Elms.topPanel = container.NewHBox(
+		utility.NewDropButton(theme.FolderOpenIcon(), a.Window.Canvas(), fyne.NewMenu("Profiles",
+			fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][5], func() { a.loadProfile() }),
+			fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][6], func() { a.loadProfileInNewWindow() }),
+			fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][7], func() { a.saveProfile() }),
+			fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][8], func() { a.saveProfileAs() }),
+		)),
+		utility.NewDropButton(theme.MediaPlayIcon(), a.Window.Canvas(), fyne.NewMenu("Scenario",
+			fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][9], func() { a.beginScenario() }),
+			fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][10], func() { a.interruptScenario() }),
+			fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][11], func() {
+				a.interruptScenario()
+				a.PDFcreationWindow()
+			}),
+		)),
+		utility.NewDropButton(theme.SettingsIcon(), a.Window.Canvas(), fyne.NewMenu("Change Language",
+			fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][12], func() { a.changeLanguageWindow() }))),
+		utility.NewDropButton(theme.CancelIcon(), a.Window.Canvas(), fyne.NewMenu("Quit",
+			fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][13], func() { a.Window.Close() }),
+		)),
+	)
+
 	a.Window.SetContent(
 		container.NewBorder(
-			container.NewHBox(
-				utility.NewDropButton(theme.FolderOpenIcon(), a.Window.Canvas(), fyne.NewMenu("Profiles",
-					fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][5], func() { a.loadProfile() }),
-					fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][6], func() { a.loadProfileInNewWindow() }),
-					fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][7], func() { a.saveProfile() }),
-					fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][8], func() { a.saveProfileAs() }),
-				)),
-				utility.NewDropButton(theme.MediaPlayIcon(), a.Window.Canvas(), fyne.NewMenu("Scenario",
-					fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][9], func() { a.beginScenario() }),
-					fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][10], func() { a.interruptScenario() }),
-					fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][11], func() {
-						a.interruptScenario()
-						a.PDFcreationWindow()
-					}),
-				)),
-				utility.NewDropButton(theme.SettingsIcon(), a.Window.Canvas(), fyne.NewMenu("Change Language",
-					fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][12], func() { a.changeLanguageWindow() }))),
-				utility.NewDropButton(theme.CancelIcon(), a.Window.Canvas(), fyne.NewMenu("Quit",
-					fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][13], func() { a.Window.Close() }),
-				)),
-			),
+			a.Elms.topPanel,
 			nil, nil, nil,
 			container.NewBorder(
 				nil,
@@ -682,6 +685,7 @@ func (a *SpuWindow) PDF() {
 }
 
 func (a *SpuWindow) changeLanguageWindow() {
+	a.ApplyModuleChanges()
 	options := []string{"English", "Русский"}
 	dropoutMenu := widget.NewSelectEntry(options)
 	langwindow := dialog.NewCustomConfirm(a.langmap[a.Modules.CurrentLang][29], a.langmap[a.Modules.CurrentLang][30], a.langmap[a.Modules.CurrentLang][24],
@@ -702,6 +706,35 @@ func (a *SpuWindow) changeLanguageWindow() {
 
 func (a *SpuWindow) fullrefresh() {
 	a.Modules.MainModule.Name = a.langmap[a.Modules.CurrentLang][0]
+
+	a.Elms.topPanel.RemoveAll()
+	a.Elms.topPanel.Add(
+		utility.NewDropButton(theme.FolderOpenIcon(), a.Window.Canvas(), fyne.NewMenu("Profiles",
+			fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][5], func() { a.loadProfile() }),
+			fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][6], func() { a.loadProfileInNewWindow() }),
+			fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][7], func() { a.saveProfile() }),
+			fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][8], func() { a.saveProfileAs() }),
+		)))
+
+	a.Elms.topPanel.Add(
+		utility.NewDropButton(theme.MediaPlayIcon(), a.Window.Canvas(), fyne.NewMenu("Scenario",
+			fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][9], func() { a.beginScenario() }),
+			fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][10], func() { a.interruptScenario() }),
+			fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][11], func() {
+				a.interruptScenario()
+				a.PDFcreationWindow()
+			}),
+		)))
+
+	a.Elms.topPanel.Add(
+		utility.NewDropButton(theme.SettingsIcon(), a.Window.Canvas(), fyne.NewMenu("Change Language",
+			fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][12], func() { a.changeLanguageWindow() }))))
+
+	a.Elms.topPanel.Add(
+		utility.NewDropButton(theme.CancelIcon(), a.Window.Canvas(), fyne.NewMenu("Quit",
+			fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][13], func() { a.Window.Close() }),
+		)))
+
 	a.refreshModuleGui()
 
 	a.Elms.title.Text = fmt.Sprintf("%s '%s'", a.langmap[a.Modules.CurrentLang][15], func(s string) string {

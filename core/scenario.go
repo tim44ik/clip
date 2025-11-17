@@ -41,7 +41,7 @@ func (s *Scenario) execute(ctx context.Context, outputter func(string, *Module))
 			defer wg.Done()
 
 			if utility.IsCanceled(ctx) {
-				localOutputter("Отменено\n")
+				localOutputter("Canceled\n")
 				return
 			}
 			m.Output = ""
