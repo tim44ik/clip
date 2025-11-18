@@ -70,6 +70,7 @@ func (r *Runtime) Execute(code string, ctx context.Context, outputter func(strin
 		for {
 			select {
 			case <-ctx.Done():
+				outputter("\nModule finished")
 				return
 			case str := <-stdOutCh:
 				outputter(str)

@@ -457,7 +457,7 @@ func (a *SpuWindow) beginScenario() {
 
 			if a.makePDF.do {
 				fyne.Do(func() {
-
+					a.PDFcreationWindow()
 				})
 			} else {
 				dialog.ShowInformation(a.langmap[a.Modules.CurrentLang][17], a.langmap[a.Modules.CurrentLang][18], a.Window)
@@ -611,11 +611,7 @@ func (a *SpuWindow) refreshModuleGui() {
 }
 
 func (a *SpuWindow) addModuleOutput(module *Module, line string) {
-	if line == a.langmap[a.Modules.CurrentLang][27] && module == a.selectedModule {
-		module.Output += line
-	} else if line != a.langmap[a.Modules.CurrentLang][27] {
-		module.Output += line
-	}
+	module.Output += line
 	if module == a.selectedModule {
 		a.Elms.ModuleOutputEntryMutex.Lock()
 		defer a.Elms.ModuleOutputEntryMutex.Unlock()
