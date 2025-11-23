@@ -225,7 +225,10 @@ func (a *SpuWindow) buildWindow(app fyne.App) {
 		),
 	)
 	a.Window.Resize(fyne.NewSize(900, 600))
-	a.Window.SetOnClosed(func() { a.Window.Close() })
+	a.Window.SetOnClosed(func() {
+		a.interruptScenario()
+		a.Window.Close()
+	})
 	a.Elms.activity.Hide()
 }
 
@@ -352,9 +355,9 @@ func (a *SpuWindow) loadProfileInNewWindow() {
 
 			newWindow.Profiles.Exists = true
 			newWindow.Profiles.Path = filename
-			newWindow.fullrefresh()
 
 			newWindow.Window.Show()
+			newWindow.fullrefresh()
 		},
 		a.Window,
 	)
@@ -386,7 +389,7 @@ func (a *SpuWindow) loadProfile() {
 
 			a.Profiles.Exists = true
 			a.Profiles.Path = filename
-			a.refreshModuleGui()
+			a.fullrefresh()
 		},
 		a.Window,
 	)

@@ -73,10 +73,13 @@ func (r *Runtime) Execute(code string, ctx context.Context, outputter func(strin
 				outputter("\nModule finished")
 				return
 			case str := <-stdOutCh:
-				outputter(str)
+				if strings.Contains(str, "\n") {
+					outputter(str)
+				}
 			case str := <-stdErrCh:
-				outputter(str)
-
+				if strings.Contains(str, "\n") {
+					outputter(str)
+				}
 			}
 		}
 	}()
