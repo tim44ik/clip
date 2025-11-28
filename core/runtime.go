@@ -14,7 +14,6 @@ import (
 
 type Runtime struct {
 	Variables map[string]string
-	Directory string
 }
 
 func NewRuntime() *Runtime {
