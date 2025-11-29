@@ -65,7 +65,7 @@ func PDF(a *SpuWindow) {
 		pdf.Ln(15)
 		pdf.SetFontSize(14)
 		pdf.SetFontStyle("")
-		pdf.MultiCell(0, 10, m.Output, "0", "L", false)
+		pdf.MultiCell(0, 10, strings.Join(m.Output, ""), "0", "L", false)
 	}
 	e := pdf.OutputFileAndClose(a.makePDF.pdfPath)
 	if e != nil {

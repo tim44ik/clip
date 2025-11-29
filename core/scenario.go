@@ -32,7 +32,7 @@ func (s *Scenario) execute(ctx context.Context, outputter func(string, *Module))
 	for _, m := range s.ModulesStruct {
 		wg.Add(1)
 		go func(m *Module) {
-			m.Output = ""
+			m.Output = []string{}
 			localOutputter := func(s string) {
 				go outputter(s, m)
 			}
@@ -44,7 +44,6 @@ func (s *Scenario) execute(ctx context.Context, outputter func(string, *Module))
 				localOutputter("Canceled\n")
 				return
 			}
-			m.Output = ""
 			execution := NewRuntime()
 			e := execution.Execute(s.Main+"\n"+m.Content, ctx, localOutputter)
 			if e != nil {

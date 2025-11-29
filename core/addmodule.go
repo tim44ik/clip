@@ -15,7 +15,6 @@ func AddModule(a *SpuWindow) {
 	a.applyModuleChanges()
 	input := widget.NewMultiLineEntry()
 	scroll := container.NewVScroll(input)
-	scroll.ScrollToBottom()
 	addmoduleDialog := dialog.NewCustomConfirm(
 		a.langmap[a.Modules.CurrentLang][26],
 		a.langmap[a.Modules.CurrentLang][23],
@@ -40,7 +39,7 @@ func addDialog(a *SpuWindow, input *widget.Entry, b bool) {
 		m := &Module{
 			Name:    input.Text,
 			Content: "",
-			Output:  "",
+			Output:  []string{},
 		}
 		a.Modules.ChildModules = append(a.Modules.ChildModules, m)
 		a.elms.modulesPanel.Add(CreateModuleButton(a, m))

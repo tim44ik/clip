@@ -39,14 +39,16 @@ type SpuWindow struct {
 		threadEntry            *widget.Entry
 		moduleContentEntry     *widget.Entry
 		ModuleOutputEntry      *widget.Entry
+		ModuleOutputEntryMutex sync.Mutex
+		newLineCounter         int
 		modulesPanel           *fyne.Container
+		FullOutputContainer    *fyne.Container
 		bottomPanelCheckboxes  *fyne.Container
 		bottomPanelButtons     *fyne.Container
 		topPanel               *fyne.Container
 		activity               *widget.Activity
 		mainButton             *fyne.Container
 		addButton              *fyne.Container
-		ModuleOutputEntryMutex sync.Mutex
 	}
 
 	Modules struct {
@@ -63,53 +65,7 @@ type SpuWindow struct {
 
 func CreateWindow() (a *SpuWindow) {
 	a = &SpuWindow{}
-	a.langmap = make(map[string][]string)
-	a.langmap["English"] =
-		[]string{"Main",
-			"Threads Number",
-			"Make PDF report       ",
-			"Edit", "Delete",
-			"Load", "Load in new window",
-			"Save", "Save as",
-			"Begin scenario", "Break scenario",
-			"Break scenario and make PDF",
-			"Change language", "Exit",
-			"Add module", "Module", "Scenario is already started",
-			"Completed", "Scenario execution completed",
-			"Scenario was not started",
-			"Interrupted", "Scenario execution was interrupted",
-			"Alter module name", "OK", "Cancel",
-			"Enter new module name",
-			"Add new module", "Cancelled",
-			"Error occured while making PDF",
-			"Change language", "Apply",
-			"Choose language"}
-
-	a.langmap["Русский"] =
-		[]string{"Главная",
-			"Количество потоков",
-			"Сформировать PDF отчёт",
-			"Изменить", "Удалить",
-			"Загрузить",
-			"Загрузить в новом окне",
-			"Сохранить", "Сохранить как",
-			"Начать сценарий",
-			"Прервать сценарий",
-			"Прервать сценарий и сформировать отчёт в PDF",
-			"Изменить язык", "Выйти",
-			"Добавить модуль", "Модуль",
-			"Сценарий уже запущен",
-			"Выполнено",
-			"Выполнение сценария окончено",
-			"Сценарий не запущен",
-			"Прервано",
-			"Выполнение сценария было прервано",
-			"Изменить название модуля", "OK",
-			"Отмена", "Введите название",
-			"Добавить новый модуль", "Отменено",
-			"Ошибка при создании PDF",
-			"Изменить язык", "Применить",
-			"Выберите язык"}
+	LangmapInit(a)
 
 	if a.Modules.CurrentLang == "" {
 		a.Modules.CurrentLang = "English"
@@ -137,6 +93,8 @@ func (a *SpuWindow) buildWindow(app fyne.App) {
 	a.elms.ModuleOutputEntry.Disable()
 
 	a.elms.modulesPanel = container.NewVBox()
+
+	a.elms.FullOutputContainer = container.NewVBox()
 
 	a.elms.bottomPanelCheckboxes = container.NewVBox()
 
@@ -173,10 +131,12 @@ func (a *SpuWindow) buildWindow(app fyne.App) {
 				container.NewPadded(
 					container.NewBorder(
 						a.elms.title,
-						container.NewCenter(
-							container.NewHBox(a.elms.bottomPanelCheckboxes,
-								a.elms.bottomPanelButtons),
-						),
+						container.NewBorder(nil, nil, nil,
+							a.elms.FullOutputContainer,
+							container.NewCenter(
+								container.NewHBox(a.elms.bottomPanelCheckboxes,
+									a.elms.bottomPanelButtons),
+							)),
 						nil,
 						nil,
 						container.NewGridWithRows(2, a.elms.moduleContentEntry, a.elms.ModuleOutputEntry),
@@ -208,11 +168,15 @@ func (a *SpuWindow) selectModule(m *Module) {
 
 	a.elms.title.Refresh()
 	a.elms.moduleContentEntry.SetText(m.Content)
-	a.elms.ModuleOutputEntry.SetText(m.Output)
+	a.elms.FullOutputContainer.Hidden = m == a.Modules.MainModule
 	a.elms.ModuleOutputEntry.Hidden = m == a.Modules.MainModule
 	a.elms.bottomPanelButtons.Hidden = m == a.Modules.MainModule
-	a.elms.ModuleOutputEntry.SetText(m.Output)
-	a.elms.ModuleOutputEntry.CursorRow = strings.LastIndexAny(m.Output, "\n")
+	if len(m.Output) > 14 {
+		a.elms.ModuleOutputEntry.SetText(strings.Join(m.Output[:14], "\n"))
+	} else {
+		a.elms.ModuleOutputEntry.SetText(strings.Join(m.Output, "\n"))
+	}
+	a.elms.ModuleOutputEntry.CursorRow = strings.LastIndexAny(a.elms.ModuleOutputEntry.Text, "\n")
 	a.elms.ModuleOutputEntry.Refresh()
 	a.elms.bottomPanelCheckboxes.Refresh()
 }
@@ -222,12 +186,6 @@ func (a *SpuWindow) applyModuleChanges() {
 		return
 	}
 	a.selectedModule.Content = a.elms.moduleContentEntry.Text
-}
-
-func (a *SpuWindow) restoreOutput(outputarray []string) {
-	for i, m := range a.Modules.ChildModules {
-		m.Output = outputarray[i]
-	}
 }
 
 func (a *SpuWindow) beginScenario() {
@@ -307,17 +265,33 @@ func (a *SpuWindow) refreshModuleGui() {
 	}
 	a.elms.modulesPanel.Refresh()
 	a.elms.moduleContentEntry.SetText(a.selectedModule.Content)
-	a.elms.ModuleOutputEntry.SetText(a.selectedModule.Output)
+	if strings.Count(a.elms.ModuleOutputEntry.Text, "\n") > 14 {
+		a.elms.ModuleOutputEntry.SetText(strings.Join(a.selectedModule.Output[len(a.selectedModule.Output)-14:len(a.selectedModule.Output)], ""))
+	} else {
+		a.elms.ModuleOutputEntry.SetText(strings.Join(a.selectedModule.Output, ""))
+
+	}
+
 }
 
 func (a *SpuWindow) addModuleOutput(module *Module, line string) {
-	module.Output += line
+	module.Output = append(module.Output, line)
 	if module == a.selectedModule {
 		a.elms.ModuleOutputEntryMutex.Lock()
 		defer a.elms.ModuleOutputEntryMutex.Unlock()
-		a.elms.ModuleOutputEntry.Text += line
-		a.elms.ModuleOutputEntry.CursorRow = strings.LastIndexAny(module.Output, "\n")
+		if strings.Count(a.elms.ModuleOutputEntry.Text, "\n") > 14 {
+			a.elms.ModuleOutputEntry.SetText(strings.Join(a.selectedModule.Output[len(a.selectedModule.Output)-14:len(a.selectedModule.Output)], ""))
+		} else {
+			a.elms.ModuleOutputEntry.SetText(strings.Join(a.selectedModule.Output, ""))
+		}
+		a.elms.ModuleOutputEntry.CursorRow = strings.LastIndex(a.elms.ModuleOutputEntry.Text, "\n")
 		a.elms.ModuleOutputEntry.Refresh()
+	}
+}
+
+func (a *SpuWindow) restoreOutput(outputarray map[string][]string) {
+	for _, m := range a.Modules.ChildModules {
+		m.Output = outputarray[m.Name]
 	}
 }
 
@@ -374,6 +348,9 @@ func (a *SpuWindow) fullrefresh() {
 		s = strings.ReplaceAll(s, "\n", " ")
 		return s[:31] + "..."
 	}(a.selectedModule.Name))
+
+	a.elms.FullOutputContainer.RemoveAll()
+	a.elms.FullOutputContainer.Add(container.NewVBox(widget.NewButton(a.langmap[a.Modules.CurrentLang][32], func() { FullOutput(a) })))
 
 	a.elms.bottomPanelButtons.RemoveAll()
 	a.elms.bottomPanelButtons.Add(widget.NewButton(a.langmap[a.Modules.CurrentLang][3], func() { Alter(a) }))
