@@ -49,6 +49,7 @@ func WrapReaderToChannel(reader io.Reader) (ch chan string, free func()) {
 				outputString, _ = ansi.Cleanse(string(buff[:n]))
 			}
 			ch <- outputString
+
 		}
 	}()
 

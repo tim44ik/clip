@@ -21,7 +21,8 @@ func LangmapInit(a *SpuWindow) {
 			"Add new module", "Cancelled",
 			"Error occured while making PDF",
 			"Change language", "Apply",
-			"Choose language", "View full output"}
+			"Choose language", "View full output",
+			"Process output", "Choose options for PDF report"}
 
 	a.langmap["Русский"] =
 		[]string{"Главная",
@@ -47,6 +48,7 @@ func LangmapInit(a *SpuWindow) {
 			"Добавить новый модуль", "Отменено",
 			"Ошибка при создании PDF",
 			"Изменить язык", "Применить",
-			"Выберите язык", "Посмотреть весь вывод"}
+			"Выберите язык", "Посмотреть весь вывод",
+			"Обработать вывод", "Выберите опции для PDF отчета"}
 
 }

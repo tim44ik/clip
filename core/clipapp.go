@@ -29,6 +29,7 @@ type SpuWindow struct {
 
 	makePDF struct {
 		do      bool
+		process bool
 		pdfPath string
 	}
 
@@ -154,7 +155,6 @@ func (a *SpuWindow) buildWindow(app fyne.App) {
 }
 
 func (a *SpuWindow) selectModule(m *Module) {
-
 	a.selectedModule = m
 	a.elms.title.Text = fmt.Sprintf("%s '%s'", a.langmap[a.Modules.CurrentLang][15], func(s string) string {
 		if !strings.Contains(s, "\n") && len(s) < 30 {
@@ -172,12 +172,12 @@ func (a *SpuWindow) selectModule(m *Module) {
 	a.elms.ModuleOutputEntry.Hidden = m == a.Modules.MainModule
 	a.elms.bottomPanelButtons.Hidden = m == a.Modules.MainModule
 	if len(m.Output) > 14 {
-		a.elms.ModuleOutputEntry.SetText(strings.Join(m.Output[:14], "\n"))
+		a.elms.ModuleOutputEntry.SetText(strings.Join(
+			a.selectedModule.Output[len(m.Output)-15:len(m.Output)], ""))
 	} else {
-		a.elms.ModuleOutputEntry.SetText(strings.Join(m.Output, "\n"))
+		a.elms.ModuleOutputEntry.SetText(strings.Join(m.Output, ""))
 	}
 	a.elms.ModuleOutputEntry.CursorRow = strings.LastIndexAny(a.elms.ModuleOutputEntry.Text, "\n")
-	a.elms.ModuleOutputEntry.Refresh()
 	a.elms.bottomPanelCheckboxes.Refresh()
 }
 
@@ -266,7 +266,7 @@ func (a *SpuWindow) refreshModuleGui() {
 	a.elms.modulesPanel.Refresh()
 	a.elms.moduleContentEntry.SetText(a.selectedModule.Content)
 	if strings.Count(a.elms.ModuleOutputEntry.Text, "\n") > 14 {
-		a.elms.ModuleOutputEntry.SetText(strings.Join(a.selectedModule.Output[len(a.selectedModule.Output)-14:len(a.selectedModule.Output)], ""))
+		a.elms.ModuleOutputEntry.SetText(strings.Join(a.selectedModule.Output[len(a.selectedModule.Output)-15:len(a.selectedModule.Output)], ""))
 	} else {
 		a.elms.ModuleOutputEntry.SetText(strings.Join(a.selectedModule.Output, ""))
 
@@ -275,12 +275,12 @@ func (a *SpuWindow) refreshModuleGui() {
 }
 
 func (a *SpuWindow) addModuleOutput(module *Module, line string) {
-	module.Output = append(module.Output, line)
+	module.Output = append(module.Output, strconv.Itoa(len(module.Output)+1)+".  "+line)
 	if module == a.selectedModule {
 		a.elms.ModuleOutputEntryMutex.Lock()
 		defer a.elms.ModuleOutputEntryMutex.Unlock()
-		if strings.Count(a.elms.ModuleOutputEntry.Text, "\n") > 14 {
-			a.elms.ModuleOutputEntry.SetText(strings.Join(a.selectedModule.Output[len(a.selectedModule.Output)-14:len(a.selectedModule.Output)], ""))
+		if strings.Count(a.elms.ModuleOutputEntry.Text, "\n") > 14 && len(module.Output) > 14 {
+			a.elms.ModuleOutputEntry.SetText(strings.Join(a.selectedModule.Output[len(a.selectedModule.Output)-15:len(a.selectedModule.Output)], ""))
 		} else {
 			a.elms.ModuleOutputEntry.SetText(strings.Join(a.selectedModule.Output, ""))
 		}
@@ -360,9 +360,9 @@ func (a *SpuWindow) fullrefresh() {
 	a.elms.threadEntry.SetPlaceHolder(a.langmap[a.Modules.CurrentLang][1])
 
 	a.elms.bottomPanelCheckboxes.RemoveAll()
-	a.elms.bottomPanelCheckboxes.Add(a.elms.threadEntry)
-	a.elms.bottomPanelCheckboxes.Add(container.NewVBox(widget.NewCheck(a.langmap[a.Modules.CurrentLang][2], func(b bool) {
+	a.elms.bottomPanelCheckboxes.Add(widget.NewCheck(a.langmap[a.Modules.CurrentLang][2], func(b bool) {
 		a.makePDF.do = b
-	})))
+	}))
+	a.elms.bottomPanelCheckboxes.Add(a.elms.threadEntry)
 
 }

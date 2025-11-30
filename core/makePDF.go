@@ -2,26 +2,87 @@ package core
 
 import (
 	_ "embed"
+	"encoding/json"
 	"fmt"
+	"image/color"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/storage"
+	"fyne.io/fyne/v2/widget"
 	"github.com/phpdave11/gofpdf"
 )
 
+type NVDResponse struct {
+	Vulnerabilities []struct {
+		CVE struct {
+			ID         string `json:"id"`
+			References []struct {
+				Url string `json:"url"`
+			} `json:"references"`
+		} `json:"cve"`
+
+		Metrics struct {
+			CvssMetricV2 []struct {
+				BaseSeverity string `json:"baseSeverity"`
+			} `json:"cvssMetricV2"`
+		} `json:"metrics"`
+	} `json:"vulnerabilities"`
+}
+
+type NVDClient struct {
+	http  *http.Client
+	mu    sync.Mutex
+	cache map[string]*CVEInfo
+}
+
+type CVEInfo struct {
+	Severity string
+	Links    []string
+}
+
+type Job struct {
+	CVE string
+}
+
+type Result struct {
+	CVE  string
+	Info *CVEInfo
+	Err  error
+}
+
 func PDFcreationWindow(a *SpuWindow) {
-	filesavedialog := dialog.NewFileSave(
-		func(writer fyne.URIWriteCloser, err error) {
-			makePDFFile(a, writer, err)
+	addmoduleDialog := dialog.NewCustomConfirm(
+		"",
+		a.langmap[a.Modules.CurrentLang][23],
+		a.langmap[a.Modules.CurrentLang][24],
+		container.NewPadded(
+			container.NewBorder(nil, nil, nil, nil,
+				container.NewVBox(canvas.NewText(a.langmap[a.Modules.CurrentLang][34], color.Black),
+					widget.NewCheck(a.langmap[a.Modules.CurrentLang][33], func(b bool) { a.makePDF.process = b }))),
+		), func(b bool) {
+			if b {
+				filesaveDialog := dialog.NewFileSave(
+					func(writer fyne.URIWriteCloser, err error) {
+						makePDFFile(a, writer, err)
+					}, a.Window)
+				filesaveDialog.SetFilter(storage.NewExtensionFileFilter([]string{".pdf"}))
+				filesaveDialog.Resize(fyne.NewSize(900, 500))
+				filesaveDialog.Show()
+			}
 		}, a.Window)
-	filesavedialog.SetFilter(storage.NewExtensionFileFilter([]string{".pdf"}))
-	filesavedialog.Resize(fyne.NewSize(900, 500))
-	filesavedialog.Show()
+	addmoduleDialog.Resize(fyne.NewSize(300, 200))
+	addmoduleDialog.Show()
 }
 
 func makePDFFile(a *SpuWindow, writer fyne.URIWriteCloser, err error) {
@@ -65,10 +126,145 @@ func PDF(a *SpuWindow) {
 		pdf.Ln(15)
 		pdf.SetFontSize(14)
 		pdf.SetFontStyle("")
-		pdf.MultiCell(0, 10, strings.Join(m.Output, ""), "0", "L", false)
+		if a.makePDF.process {
+			processedString := processOutput(m.Output)
+			pdf.MultiCell(0, 10, processedString, "0", "L", false)
+		} else {
+			pdf.MultiCell(0, 10, strings.Join(m.Output, ""), "0", "L", false)
+		}
+
 	}
 	e := pdf.OutputFileAndClose(a.makePDF.pdfPath)
 	if e != nil {
 		dialog.ShowError(fmt.Errorf("%s:\n%s", a.langmap[a.Modules.CurrentLang][28], e), a.Window)
 	}
+}
+
+func processOutput(output []string) string {
+
+	client := NewNVDClient()
+
+	cvesByLine := FindCVEs(output)
+
+	var cveList []string
+	for cve := range cvesByLine {
+		cveList = append(cveList, cve)
+	}
+
+	const maxGoroutines = 10
+	sem := make(chan struct{}, maxGoroutines)
+
+	var wg sync.WaitGroup
+	cveData := sync.Map{}
+
+	for _, cve := range cveList {
+		wg.Add(1)
+		sem <- struct{}{}
+
+		go func(cve string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			info, err := client.Fetch(cve)
+			if err != nil {
+				info = &CVEInfo{Severity: "UNKNOWN", Links: []string{}}
+			}
+
+			cveData.Store(cve, info)
+		}(cve)
+	}
+
+	wg.Wait()
+
+	output = append(output, "\n\n\nProcessing results:\n")
+	for cve, lines := range cvesByLine {
+		dataAny, _ := cveData.Load(cve)
+		info := dataAny.(*CVEInfo)
+
+		builder := strings.Builder{}
+		builder.WriteString(fmt.Sprintf("%s found in lines: %v\n", cve, lines))
+		builder.WriteString(fmt.Sprintf("severity: %s\n", info.Severity))
+		builder.WriteString("links:\n")
+
+		for _, l := range info.Links {
+			builder.WriteString(l + "\n")
+		}
+
+		output = append(output, builder.String())
+	}
+
+	return strings.Join(output, "")
+}
+func NewNVDClient() *NVDClient {
+	return &NVDClient{
+		http:  &http.Client{Timeout: 10 * time.Second},
+		cache: make(map[string]*CVEInfo),
+	}
+}
+
+func (n *NVDClient) Fetch(cve string) (*CVEInfo, error) {
+	n.mu.Lock()
+	if v, ok := n.cache[cve]; ok {
+		n.mu.Unlock()
+		return v, nil
+	}
+	n.mu.Unlock()
+
+	url := fmt.Sprintf("https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=%s", cve)
+	resp, err := n.http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("NVD: %s", string(body))
+	}
+
+	var parsed NVDResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, err
+	}
+
+	info := &CVEInfo{}
+
+	if len(parsed.Vulnerabilities) > 0 {
+		v := parsed.Vulnerabilities[0]
+
+		if len(v.Metrics.CvssMetricV2) > 0 {
+			info.Severity = v.Metrics.CvssMetricV2[0].BaseSeverity
+		} else {
+			info.Severity = "UNKNOWN"
+		}
+
+		for _, r := range v.CVE.References {
+			info.Links = append(info.Links, r.Url)
+		}
+	}
+
+	n.mu.Lock()
+	n.cache[cve] = info
+	n.mu.Unlock()
+
+	return info, nil
+}
+
+func FindCVEs(lines []string) map[string][]int {
+	re := regexp.MustCompile(`CVE-\d{4}-\d{4,7}`)
+
+	result := make(map[string][]int)
+
+	for i, line := range lines {
+		found := re.FindAllString(line, -1)
+		seen := map[string]bool{}
+
+		for _, cve := range found {
+			if !seen[cve] {
+				result[cve] = append(result[cve], i+1)
+				seen[cve] = true
+			}
+		}
+	}
+	return result
 }

@@ -58,7 +58,7 @@ func makeJson(a *SpuWindow, filename string) error {
 	outputarray := make(map[string][]string)
 	for _, m := range a.Modules.ChildModules {
 		outputarray[m.Name] = m.Output
-		m.Output = []string{}
+		m.Output = nil
 	}
 	defer a.restoreOutput(outputarray)
 	a.Profiles.Path = filename

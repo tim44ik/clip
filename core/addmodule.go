@@ -39,7 +39,7 @@ func addDialog(a *SpuWindow, input *widget.Entry, b bool) {
 		m := &Module{
 			Name:    input.Text,
 			Content: "",
-			Output:  []string{},
+			Output:  nil,
 		}
 		a.Modules.ChildModules = append(a.Modules.ChildModules, m)
 		a.elms.modulesPanel.Add(CreateModuleButton(a, m))
