@@ -4,18 +4,17 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
-	"image/color"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/storage"
@@ -63,14 +62,13 @@ type Result struct {
 
 func PDFcreationWindow(a *SpuWindow) {
 	addmoduleDialog := dialog.NewCustomConfirm(
-		"",
+		a.langmap[a.Modules.CurrentLang][35],
 		a.langmap[a.Modules.CurrentLang][23],
 		a.langmap[a.Modules.CurrentLang][24],
 		container.NewPadded(
-			container.NewBorder(nil, nil, nil, nil,
-				container.NewVBox(canvas.NewText(a.langmap[a.Modules.CurrentLang][34], color.Black),
-					widget.NewCheck(a.langmap[a.Modules.CurrentLang][33], func(b bool) { a.makePDF.process = b }))),
-		), func(b bool) {
+			container.NewBorder(widget.NewCheck(a.langmap[a.Modules.CurrentLang][34], func(b bool) { a.makePDF.process = b }),
+				nil, nil, nil)),
+		func(b bool) {
 			if b {
 				filesaveDialog := dialog.NewFileSave(
 					func(writer fyne.URIWriteCloser, err error) {
@@ -130,7 +128,8 @@ func PDF(a *SpuWindow) {
 			processedString := processOutput(m.Output)
 			pdf.MultiCell(0, 10, processedString, "0", "L", false)
 		} else {
-			pdf.MultiCell(0, 10, strings.Join(m.Output, ""), "0", "L", false)
+			enumed := enumLines(m.Output)
+			pdf.MultiCell(0, 10, strings.Join(enumed, "\n"), "0", "L", false)
 		}
 
 	}
@@ -140,18 +139,20 @@ func PDF(a *SpuWindow) {
 	}
 }
 
-func processOutput(output []string) string {
+func processOutput(output string) string {
 
 	client := NewNVDClient()
 
-	cvesByLine := FindCVEs(output)
+	outputListed := enumLines(output)
+
+	cvesByLine := FindCVEs(outputListed)
 
 	var cveList []string
 	for cve := range cvesByLine {
 		cveList = append(cveList, cve)
 	}
 
-	const maxGoroutines = 10
+	maxGoroutines := 10
 	sem := make(chan struct{}, maxGoroutines)
 
 	var wg sync.WaitGroup
@@ -176,13 +177,13 @@ func processOutput(output []string) string {
 
 	wg.Wait()
 
-	output = append(output, "\n\n\nProcessing results:\n")
+	outputListed = append(outputListed, "\nProcessing results:\n")
 	for cve, lines := range cvesByLine {
 		dataAny, _ := cveData.Load(cve)
 		info := dataAny.(*CVEInfo)
 
 		builder := strings.Builder{}
-		builder.WriteString(fmt.Sprintf("%s found in lines: %v\n", cve, lines))
+		builder.WriteString(fmt.Sprintf("%s found in lines: %s\n", cve, strings.Join(lines, ", ")))
 		builder.WriteString(fmt.Sprintf("severity: %s\n", info.Severity))
 		builder.WriteString("links:\n")
 
@@ -190,11 +191,20 @@ func processOutput(output []string) string {
 			builder.WriteString(l + "\n")
 		}
 
-		output = append(output, builder.String())
+		outputListed = append(outputListed, builder.String())
 	}
 
-	return strings.Join(output, "")
+	return strings.Join(outputListed, "\n")
 }
+
+func enumLines(output string) []string {
+	divided := strings.Split(output, "\n")
+	for i, v := range divided[:len(divided)-2] {
+		divided[i] = strconv.Itoa(i+1) + "  " + v
+	}
+	return divided
+}
+
 func NewNVDClient() *NVDClient {
 	return &NVDClient{
 		http:  &http.Client{Timeout: 10 * time.Second},
@@ -250,10 +260,10 @@ func (n *NVDClient) Fetch(cve string) (*CVEInfo, error) {
 	return info, nil
 }
 
-func FindCVEs(lines []string) map[string][]int {
+func FindCVEs(lines []string) map[string][]string {
 	re := regexp.MustCompile(`CVE-\d{4}-\d{4,7}`)
 
-	result := make(map[string][]int)
+	result := make(map[string][]string)
 
 	for i, line := range lines {
 		found := re.FindAllString(line, -1)
@@ -261,7 +271,7 @@ func FindCVEs(lines []string) map[string][]int {
 
 		for _, cve := range found {
 			if !seen[cve] {
-				result[cve] = append(result[cve], i+1)
+				result[cve] = append(result[cve], strconv.Itoa(i+1))
 				seen[cve] = true
 			}
 		}

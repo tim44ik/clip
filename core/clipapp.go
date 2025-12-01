@@ -171,11 +171,11 @@ func (a *SpuWindow) selectModule(m *Module) {
 	a.elms.FullOutputContainer.Hidden = m == a.Modules.MainModule
 	a.elms.ModuleOutputEntry.Hidden = m == a.Modules.MainModule
 	a.elms.bottomPanelButtons.Hidden = m == a.Modules.MainModule
-	if len(m.Output) > 14 {
-		a.elms.ModuleOutputEntry.SetText(strings.Join(
-			a.selectedModule.Output[len(m.Output)-15:len(m.Output)], ""))
+	divided := strings.Split(a.selectedModule.Output, "\n")
+	if len(divided) > 14 {
+		a.elms.ModuleOutputEntry.SetText(strings.Join(divided[len(divided)-15:], "\n"))
 	} else {
-		a.elms.ModuleOutputEntry.SetText(strings.Join(m.Output, ""))
+		a.elms.ModuleOutputEntry.SetText(a.selectedModule.Output)
 	}
 	a.elms.ModuleOutputEntry.CursorRow = strings.LastIndexAny(a.elms.ModuleOutputEntry.Text, "\n")
 	a.elms.bottomPanelCheckboxes.Refresh()
@@ -265,31 +265,32 @@ func (a *SpuWindow) refreshModuleGui() {
 	}
 	a.elms.modulesPanel.Refresh()
 	a.elms.moduleContentEntry.SetText(a.selectedModule.Content)
-	if strings.Count(a.elms.ModuleOutputEntry.Text, "\n") > 14 {
-		a.elms.ModuleOutputEntry.SetText(strings.Join(a.selectedModule.Output[len(a.selectedModule.Output)-15:len(a.selectedModule.Output)], ""))
+	divided := strings.Split(a.selectedModule.Output, "\n")
+	if len(divided) > 14 {
+		a.elms.ModuleOutputEntry.SetText(strings.Join(divided[len(divided)-15:], "\n"))
 	} else {
-		a.elms.ModuleOutputEntry.SetText(strings.Join(a.selectedModule.Output, ""))
-
+		a.elms.ModuleOutputEntry.SetText(a.selectedModule.Output)
 	}
 
 }
 
 func (a *SpuWindow) addModuleOutput(module *Module, line string) {
-	module.Output = append(module.Output, strconv.Itoa(len(module.Output)+1)+".  "+line)
+	module.Output += line
 	if module == a.selectedModule {
 		a.elms.ModuleOutputEntryMutex.Lock()
 		defer a.elms.ModuleOutputEntryMutex.Unlock()
-		if strings.Count(a.elms.ModuleOutputEntry.Text, "\n") > 14 && len(module.Output) > 14 {
-			a.elms.ModuleOutputEntry.SetText(strings.Join(a.selectedModule.Output[len(a.selectedModule.Output)-15:len(a.selectedModule.Output)], ""))
+		divided := strings.Split(module.Output, "\n")
+		if len(divided) > 14 {
+			a.elms.ModuleOutputEntry.SetText(strings.Join(divided[len(divided)-15:], "\n"))
 		} else {
-			a.elms.ModuleOutputEntry.SetText(strings.Join(a.selectedModule.Output, ""))
+			a.elms.ModuleOutputEntry.SetText(module.Output)
 		}
 		a.elms.ModuleOutputEntry.CursorRow = strings.LastIndex(a.elms.ModuleOutputEntry.Text, "\n")
 		a.elms.ModuleOutputEntry.Refresh()
 	}
 }
 
-func (a *SpuWindow) restoreOutput(outputarray map[string][]string) {
+func (a *SpuWindow) restoreOutput(outputarray map[string]string) {
 	for _, m := range a.Modules.ChildModules {
 		m.Output = outputarray[m.Name]
 	}

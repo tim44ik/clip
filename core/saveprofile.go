@@ -55,10 +55,10 @@ func SaveProfileAs(a *SpuWindow) {
 func makeJson(a *SpuWindow, filename string) error {
 	filename = strings.TrimSuffix(filename, filepath.Ext(filename))
 	filename += ".json"
-	outputarray := make(map[string][]string)
+	outputarray := make(map[string]string)
 	for _, m := range a.Modules.ChildModules {
 		outputarray[m.Name] = m.Output
-		m.Output = nil
+		m.Output = ""
 	}
 	defer a.restoreOutput(outputarray)
 	a.Profiles.Path = filename
