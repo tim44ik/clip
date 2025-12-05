@@ -7,6 +7,7 @@ import (
 	"io"
 	"runtime"
 	"strconv"
+	"strings"
 
 	"golang.org/x/text/encoding/charmap"
 	"golang.org/x/text/transform"
@@ -86,4 +87,12 @@ func IsCanceled(ctx context.Context) bool {
 	default:
 		return false
 	}
+}
+
+func EnumLines(output string) []string {
+	divided := strings.Split(output, "\n")
+	for i := 0; i < len(divided)-2; i++ {
+		divided[i] = strconv.Itoa(i+1) + divided[i]
+	}
+	return divided
 }
