@@ -91,8 +91,8 @@ func IsCanceled(ctx context.Context) bool {
 
 func EnumLines(output string) []string {
 	divided := strings.Split(output, "\n")
-	for i := 0; i < len(divided)-2; i++ {
-		divided[i] = strconv.Itoa(i+1) + divided[i]
+	for i := 0; i < len(divided)-1; i++ {
+		divided[i] = strconv.Itoa(i+1) + "  " + divided[i]
 	}
 	return divided
 }

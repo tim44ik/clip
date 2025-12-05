@@ -1,11 +1,9 @@
 package core
 
 import (
+	"clip/utility"
 	_ "embed"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -22,42 +20,9 @@ import (
 	"github.com/phpdave11/gofpdf"
 )
 
-type NVDResponse struct {
-	Vulnerabilities []struct {
-		CVE struct {
-			ID         string `json:"id"`
-			References []struct {
-				Url string `json:"url"`
-			} `json:"references"`
-		} `json:"cve"`
-
-		Metrics struct {
-			CvssMetricV2 []struct {
-				BaseSeverity string `json:"baseSeverity"`
-			} `json:"cvssMetricV2"`
-		} `json:"metrics"`
-	} `json:"vulnerabilities"`
-}
-
-type NVDClient struct {
-	http  *http.Client
-	mu    sync.Mutex
-	cache map[string]*CVEInfo
-}
-
 type CVEInfo struct {
 	Severity string
 	Links    []string
-}
-
-type Job struct {
-	CVE string
-}
-
-type Result struct {
-	CVE  string
-	Info *CVEInfo
-	Err  error
 }
 
 func PDFcreationWindow(a *SpuWindow) {
@@ -128,7 +93,7 @@ func PDF(a *SpuWindow) {
 			processedString := processOutput(m.Output)
 			pdf.MultiCell(0, 10, processedString, "0", "L", false)
 		} else {
-			enumed := enumLines(m.Output)
+			enumed := utility.EnumLines(m.Output)
 			pdf.MultiCell(0, 10, strings.Join(enumed, "\n"), "0", "L", false)
 		}
 
@@ -143,14 +108,9 @@ func processOutput(output string) string {
 
 	client := NewNVDClient()
 
-	outputListed := enumLines(output)
+	outputListed := utility.EnumLines(output)
 
 	cvesByLine := FindCVEs(outputListed)
-
-	var cveList []string
-	for cve := range cvesByLine {
-		cveList = append(cveList, cve)
-	}
 
 	maxGoroutines := 10
 	sem := make(chan struct{}, maxGoroutines)
@@ -158,7 +118,7 @@ func processOutput(output string) string {
 	var wg sync.WaitGroup
 	cveData := sync.Map{}
 
-	for _, cve := range cveList {
+	for key := range cvesByLine {
 		wg.Add(1)
 		sem <- struct{}{}
 
@@ -172,108 +132,35 @@ func processOutput(output string) string {
 			}
 
 			cveData.Store(cve, info)
-		}(cve)
+		}(key)
 	}
 
 	wg.Wait()
+	if len(cvesByLine) != 0 {
+		outputListed = append(outputListed, "\nProcessing results:")
+		for cve, lines := range cvesByLine {
+			dataAny, _ := cveData.Load(cve)
+			info := dataAny.(*CVEInfo)
 
-	outputListed = append(outputListed, "\nProcessing results:\n")
-	for cve, lines := range cvesByLine {
-		dataAny, _ := cveData.Load(cve)
-		info := dataAny.(*CVEInfo)
-
-		builder := strings.Builder{}
-		builder.WriteString(fmt.Sprintf("%s found in lines: %s\n", cve, strings.Join(lines, ", ")))
-		builder.WriteString(fmt.Sprintf("severity: %s\n", info.Severity))
-		builder.WriteString("links:\n")
-
-		for _, l := range info.Links {
-			builder.WriteString(l + "\n")
+			outputListed = append(outputListed, fmt.Sprintf("\n%s found in lines: %s", cve, lines[:len(lines)-2]))
+			outputListed = append(outputListed, fmt.Sprintf("Severity: %s\n", info.Severity))
+			outputListed = append(outputListed, "Links:")
+			outputListed = append(outputListed, info.Links...)
 		}
-
-		outputListed = append(outputListed, builder.String())
 	}
-
 	return strings.Join(outputListed, "\n")
 }
 
-func enumLines(output string) []string {
-	divided := strings.Split(output, "\n")
-	for i, v := range divided[:len(divided)-2] {
-		divided[i] = strconv.Itoa(i+1) + "  " + v
-	}
-	return divided
-}
-
-func NewNVDClient() *NVDClient {
-	return &NVDClient{
-		http:  &http.Client{Timeout: 10 * time.Second},
-		cache: make(map[string]*CVEInfo),
-	}
-}
-
-func (n *NVDClient) Fetch(cve string) (*CVEInfo, error) {
-	n.mu.Lock()
-	if v, ok := n.cache[cve]; ok {
-		n.mu.Unlock()
-		return v, nil
-	}
-	n.mu.Unlock()
-
-	url := fmt.Sprintf("https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=%s", cve)
-	resp, err := n.http.Get(url)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("NVD: %s", string(body))
-	}
-
-	var parsed NVDResponse
-	if err := json.Unmarshal(body, &parsed); err != nil {
-		return nil, err
-	}
-
-	info := &CVEInfo{}
-
-	if len(parsed.Vulnerabilities) > 0 {
-		v := parsed.Vulnerabilities[0]
-
-		if len(v.Metrics.CvssMetricV2) > 0 {
-			info.Severity = v.Metrics.CvssMetricV2[0].BaseSeverity
-		} else {
-			info.Severity = "UNKNOWN"
-		}
-
-		for _, r := range v.CVE.References {
-			info.Links = append(info.Links, r.Url)
-		}
-	}
-
-	n.mu.Lock()
-	n.cache[cve] = info
-	n.mu.Unlock()
-
-	return info, nil
-}
-
-func FindCVEs(lines []string) map[string][]string {
+func FindCVEs(lines []string) map[string]string {
 	re := regexp.MustCompile(`CVE-\d{4}-\d{4,7}`)
 
-	result := make(map[string][]string)
+	result := make(map[string]string)
 
 	for i, line := range lines {
 		found := re.FindAllString(line, -1)
-		seen := map[string]bool{}
 
 		for _, cve := range found {
-			if !seen[cve] {
-				result[cve] = append(result[cve], strconv.Itoa(i+1))
-				seen[cve] = true
-			}
+			result[cve] += strconv.Itoa(i+1) + ", "
 		}
 	}
 	return result
