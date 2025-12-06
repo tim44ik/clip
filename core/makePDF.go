@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,8 +22,17 @@ import (
 )
 
 type CVEInfo struct {
-	Severity string
-	Links    []string
+	ID          string
+	Description string
+	SeverityV40 string
+	V40Score    int
+	SeverityV31 string
+	V31Score    int
+	SeverityV30 string
+	V30Score    int
+	SeverityV2  string
+	V2Score     int
+	Links       []string
 }
 
 func PDFcreationWindow(a *SpuWindow) {
@@ -110,7 +120,7 @@ func processOutput(output string) string {
 
 	outputListed := utility.EnumLines(output)
 
-	cvesByLine := FindCVEs(outputListed)
+	cvesByLine, softByLine := FindCVEs(outputListed)
 
 	maxGoroutines := 10
 	sem := make(chan struct{}, maxGoroutines)
@@ -128,7 +138,7 @@ func processOutput(output string) string {
 
 			info, err := client.Fetch(cve)
 			if err != nil {
-				info = &CVEInfo{Severity: "UNKNOWN", Links: []string{}}
+				info = &CVEInfo{Description: "Not found", SeverityV40: "UNKNOWN", SeverityV31: "UNKNOWN", SeverityV30: "UNKNOWN", SeverityV2: "UNKNOWN", Links: []string{}}
 			}
 
 			cveData.Store(cve, info)
@@ -136,32 +146,93 @@ func processOutput(output string) string {
 	}
 
 	wg.Wait()
+	cpeData := sync.Map{}
+	for key := range softByLine {
+		wg.Add(1)
+		sem <- struct{}{}
+		prod := regexp.MustCompile(`(?i)\b([a-z][a-z0-9_\-]+(?:[\s\-_]+[0-9]+)?)\b`).FindAllString(key, -1)[0]
+		ver := regexp.MustCompile(`(?i)\b([a-z0-9][0-9.\-]*[a-z0-9])\b`).FindAllString(key, -1)[0]
+		go func(prod, ver string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			info, err := client.FetchCPEName(prod, ver)
+			if err != nil {
+				return
+			}
+
+			cpeData.Store(key, info)
+		}(prod, ver)
+	}
+
+	wg.Wait()
 	if len(cvesByLine) != 0 {
-		outputListed = append(outputListed, "\nProcessing results:")
+		if !slices.Contains(outputListed, "\nProcessing results:") {
+			outputListed = append(outputListed, "\nProcessing results:")
+		}
 		for cve, lines := range cvesByLine {
 			dataAny, _ := cveData.Load(cve)
 			info := dataAny.(*CVEInfo)
-
 			outputListed = append(outputListed, fmt.Sprintf("\n%s found in lines: %s", cve, lines[:len(lines)-2]))
-			outputListed = append(outputListed, fmt.Sprintf("Severity: %s\n", info.Severity))
-			outputListed = append(outputListed, "Links:")
-			outputListed = append(outputListed, info.Links...)
+			outputListed = appendOutput(outputListed, info)
+
+		}
+	}
+
+	if len(softByLine) != 0 {
+		if !slices.Contains(outputListed, "\nProcessing results:") {
+			outputListed = append(outputListed, "\nProcessing results:")
+		}
+		for cpe, lines := range softByLine {
+			dataAny, _ := cveData.Load(cpe)
+			info := dataAny.([]*CVEInfo)
+			if info != nil {
+				outputListed = append(outputListed, fmt.Sprintf("%s found in lines: %s\nKnown CVEs related to that:", cpe, lines[:len(lines)-2]))
+				for _, cve := range info {
+					outputListed = appendOutput(outputListed, cve)
+				}
+			}
 		}
 	}
 	return strings.Join(outputListed, "\n")
 }
 
-func FindCVEs(lines []string) map[string]string {
+func FindCVEs(lines []string) (map[string]string, map[string]string) {
 	re := regexp.MustCompile(`CVE-\d{4}-\d{4,7}`)
+	resoft := regexp.MustCompile(`(?i)\b([a-z][a-z0-9_\-]+(?:[\s\-_]+[0-9]+)?)\s*(?:[|\s\\\/\-_]+)\s*([a-z0-9][0-9.\-]*[a-z0-9])\b`)
 
 	result := make(map[string]string)
+	softVers := make(map[string]string)
 
 	for i, line := range lines {
 		found := re.FindAllString(line, -1)
+		foundSoft := resoft.FindAllString(line, -1)
 
 		for _, cve := range found {
 			result[cve] += strconv.Itoa(i+1) + ", "
 		}
+		for _, soft := range foundSoft {
+			softVers[soft] += strconv.Itoa(i+1) + ", "
+		}
 	}
-	return result
+	return result, softVers
+}
+
+func appendOutput(outputListed []string, cveStruct *CVEInfo) []string {
+	outputListed = append(outputListed, fmt.Sprintf("Description:\n%s", cveStruct.Description))
+	if cveStruct.SeverityV40 != "" {
+		outputListed = append(outputListed, fmt.Sprintf("Severity calculated with V40 metrics: %s\nV40 Score:%d", cveStruct.SeverityV40, cveStruct.V40Score))
+	}
+	if cveStruct.SeverityV31 != "" {
+		outputListed = append(outputListed, fmt.Sprintf("Severity calculated with V31 metrics: %s\nV31 Score:%d", cveStruct.SeverityV31, cveStruct.V31Score))
+	}
+	if cveStruct.SeverityV30 != "" {
+		outputListed = append(outputListed, fmt.Sprintf("Severity calculated with V30 metrics: %s\nV30 Score:%d", cveStruct.SeverityV30, cveStruct.V30Score))
+	}
+	if cveStruct.SeverityV2 != "" {
+		outputListed = append(outputListed, fmt.Sprintf("Severity calculated with V2 metrics2: %s\nV2 Score%d", cveStruct.SeverityV2, cveStruct.V2Score))
+	}
+	outputListed = append(outputListed, "Links:")
+	outputListed = append(outputListed, cveStruct.Links...)
+	return outputListed
 }
