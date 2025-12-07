@@ -159,11 +159,11 @@ func (a *SpuWindow) selectModule(m *Module) {
 	a.elms.title.Text = fmt.Sprintf("%s '%s'", a.langmap[a.Modules.CurrentLang][15], func(s string) string {
 		if !strings.Contains(s, "\n") && len(s) < 30 {
 			return s
-		} else if len(s) > 30 {
-			return s[:31] + "..."
+		} else if strings.Contains(s, "\n") && len(s) < 30 {
+			return strings.ReplaceAll(s, "\n", " ")
 		}
 		s = strings.ReplaceAll(s, "\n", " ")
-		return s[:31] + "..."
+		return s[:31] + " ..."
 	}(m.Name))
 
 	a.elms.title.Refresh()

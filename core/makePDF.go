@@ -116,8 +116,6 @@ func PDF(a *SpuWindow) {
 
 func processOutput(output string) string {
 
-	client := NewNVDClient()
-
 	outputListed := utility.EnumLines(output)
 
 	cvesByLine, softByLine := FindCVEs(outputListed)
@@ -135,10 +133,10 @@ func processOutput(output string) string {
 		go func(cve string) {
 			defer wg.Done()
 			defer func() { <-sem }()
-
+			client := NewNVDClient()
 			info, err := client.Fetch(cve)
 			if err != nil {
-				info = &CVEInfo{Description: "Not found", SeverityV40: "UNKNOWN", SeverityV31: "UNKNOWN", SeverityV30: "UNKNOWN", SeverityV2: "UNKNOWN", Links: []string{}}
+				return
 			}
 
 			cveData.Store(cve, info)
@@ -146,26 +144,49 @@ func processOutput(output string) string {
 	}
 
 	wg.Wait()
-	cpeData := sync.Map{}
-	for key := range softByLine {
+	cpeData := make(map[string][]string)
+	for soft := range softByLine {
 		wg.Add(1)
 		sem <- struct{}{}
-		prod := regexp.MustCompile(`(?i)\b([a-z][a-z0-9_\-]+(?:[\s\-_]+[0-9]+)?)\b`).FindAllString(key, -1)[0]
-		ver := regexp.MustCompile(`(?i)\b([a-z0-9][0-9.\-]*[a-z0-9])\b`).FindAllString(key, -1)[0]
+		prod := "mod_ssl"
+		ver := "2.8.4"
 		go func(prod, ver string) {
 			defer wg.Done()
 			defer func() { <-sem }()
-
-			info, err := client.FetchCPEName(prod, ver)
+			client := NewNVDClient()
+			cpeNameList, err := client.FetchCPEName(prod, ver)
 			if err != nil {
 				return
 			}
-
-			cpeData.Store(key, info)
+			cpeData[soft] = cpeNameList
 		}(prod, ver)
 	}
 
 	wg.Wait()
+	cpeResponse := make(map[string][]*CVEInfo)
+	for soft, cpeName := range cpeData {
+		wg.Add(1)
+		sem <- struct{}{}
+		prod := "mod_ssl"
+		ver := "2.8.4"
+		go func(prod, ver string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			client := NewNVDClient()
+			for _, cpe := range cpeName {
+				resp, err := client.FetchCVEByCPE(cpe)
+				cpeResponse[soft] = append(cpeResponse[soft], resp)
+				if err != nil {
+					return
+				}
+
+			}
+
+		}(prod, ver)
+	}
+
+	wg.Wait()
+
 	if len(cvesByLine) != 0 {
 		if !slices.Contains(outputListed, "\nProcessing results:") {
 			outputListed = append(outputListed, "\nProcessing results:")
@@ -184,8 +205,7 @@ func processOutput(output string) string {
 			outputListed = append(outputListed, "\nProcessing results:")
 		}
 		for cpe, lines := range softByLine {
-			dataAny, _ := cveData.Load(cpe)
-			info := dataAny.([]*CVEInfo)
+			info := cpeResponse[cpe]
 			if info != nil {
 				outputListed = append(outputListed, fmt.Sprintf("%s found in lines: %s\nKnown CVEs related to that:", cpe, lines[:len(lines)-2]))
 				for _, cve := range info {

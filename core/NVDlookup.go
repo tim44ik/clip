@@ -29,27 +29,27 @@ type NVDResponse struct {
 		Metrics struct {
 			CvssMetricV2 []struct {
 				CvssData struct {
-					BaseScore int `json:baseScore`
-				} `json: cvssData`
+					BaseScore int `json:"baseScore"`
+				} `json:"cvssData"`
 				BaseSeverity string `json:"baseSeverity"`
-			} `json:"cvssMetricV30"`
+			} `json:"cvssMetricV2"`
 			CvssMetricV30 []struct {
 				CvssData struct {
-					BaseScore    int    `json: baseScore`
+					BaseScore    int    `json:"baseScore"`
 					BaseSeverity string `json:"baseSeverity"`
-				} `json: cvssData`
+				} `json:"cvssData"`
 			} `json:"cvssMetricV30"`
 			CvssMetricV31 []struct {
 				CvssData struct {
-					BaseScore    int    `json: baseScore`
+					BaseScore    int    `json:"baseScore"`
 					BaseSeverity string `json:"baseSeverity"`
-				} `json: cvssData`
+				} `json:"cvssData"`
 			} `json:"cvssMetricV31"`
 			CvssMetricV40 []struct {
 				CvssData struct {
-					BaseScore    int    `json: baseScore`
+					BaseScore    int    `json:"baseScore"`
 					BaseSeverity string `json:"baseSeverity"`
-				} `json: cvssData`
+				} `json:"cvssData"`
 			} `json:"cvssMetricV40"`
 		} `json:"metrics"`
 	} `json:"vulnerabilities"`
@@ -76,7 +76,7 @@ func NewNVDClient() *NVDClient {
 	}
 }
 
-func (n *NVDClient) FetchCPEName(prod, ver string) ([]*CVEInfo, error) {
+func (n *NVDClient) FetchCPEName(prod, ver string) ([]string, error) {
 	matchStringQuery := fmt.Sprintf("https://services.nvd.nist.gov/rest/json/cpematch/2.0?matchStringSearch=cpe:2.3:*:*:%s:%s", prod, ver)
 	resp, err := n.http.Get(matchStringQuery)
 	if err != nil {
@@ -96,26 +96,18 @@ func (n *NVDClient) FetchCPEName(prod, ver string) ([]*CVEInfo, error) {
 	if parsed.TotalResults == 0 {
 		return nil, fmt.Errorf("No CPE was found")
 	}
-	var success []string
+
+	success := []string{}
 	for _, match := range parsed.MatchStrings {
 		if len(match.MatchString.Matches) > 0 {
 			for _, cpe := range match.MatchString.Matches {
-				if strings.Contains(cpe.CpeName, prod+":"+ver) {
+				if strings.Contains(cpe.CpeName, prod+":"+ver) && !slices.Contains(success, cpe.CpeName) {
 					success = append(success, cpe.CpeName)
 				}
 			}
 		}
 	}
-	var CVEInfo []*CVEInfo
-	for _, cpeName := range success {
-		st, err := n.FetchCVEByCPE(cpeName)
-		if err != nil {
-			return nil, err
-		}
-		CVEInfo = append(CVEInfo, st)
-	}
-
-	return CVEInfo, nil
+	return success, nil
 }
 
 func (n *NVDClient) FetchCVEByCPE(cpeName string) (*CVEInfo, error) {
