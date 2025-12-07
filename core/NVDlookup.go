@@ -15,16 +15,15 @@ type NVDResponse struct {
 	Vulnerabilities []struct {
 		CVE struct {
 			ID           string `json:"id"`
-			Descriptions struct {
+			Descriptions []struct {
 				Language string `json:"lang"`
 				Value    string `json:"value"`
 			} `json:"descriptions"`
+			References []struct {
+				Url  string   `json:"url"`
+				Tags []string `json:"tags"`
+			} `json:"references"`
 		} `json:"cve"`
-
-		References []struct {
-			Url  string   `json:"url"`
-			Tags []string `json:"tags"`
-		} `json:"references"`
 
 		Metrics struct {
 			CvssMetricV2 []struct {
@@ -134,6 +133,11 @@ func (n *NVDClient) FetchCVEByCPE(cpeName string) (*CVEInfo, error) {
 
 	if len(parsed.Vulnerabilities) > 0 {
 		info.ID = parsed.Vulnerabilities[0].CVE.ID
+		for _, st := range parsed.Vulnerabilities[0].CVE.Descriptions {
+			if st.Language == "en" {
+				info.Description = st.Value
+			}
+		}
 		if len(parsed.Vulnerabilities[0].Metrics.CvssMetricV2) > 0 {
 			info.SeverityV2 = parsed.Vulnerabilities[0].Metrics.CvssMetricV2[0].BaseSeverity
 			info.V2Score = parsed.Vulnerabilities[0].Metrics.CvssMetricV2[0].CvssData.BaseScore
@@ -147,7 +151,7 @@ func (n *NVDClient) FetchCVEByCPE(cpeName string) (*CVEInfo, error) {
 			info.SeverityV40 = parsed.Vulnerabilities[0].Metrics.CvssMetricV40[0].CvssData.BaseSeverity
 			info.V40Score = parsed.Vulnerabilities[0].Metrics.CvssMetricV40[0].CvssData.BaseScore
 		}
-		for _, r := range parsed.Vulnerabilities[0].References {
+		for _, r := range parsed.Vulnerabilities[0].CVE.References {
 			if !slices.Contains(r.Tags, "Broken Link") {
 				info.Links = append(info.Links, r.Url)
 			}
@@ -194,7 +198,7 @@ func (n *NVDClient) Fetch(cve string) (*CVEInfo, error) {
 			info.SeverityV40 = v.Metrics.CvssMetricV40[0].CvssData.BaseSeverity
 			info.V40Score = v.Metrics.CvssMetricV40[0].CvssData.BaseScore
 		}
-		for _, r := range v.References {
+		for _, r := range v.CVE.References {
 			if !slices.Contains(r.Tags, "Broken Link") {
 				info.Links = append(info.Links, r.Url)
 			}

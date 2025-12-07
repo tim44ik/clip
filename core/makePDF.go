@@ -167,9 +167,7 @@ func processOutput(output string) string {
 	for soft, cpeName := range cpeData {
 		wg.Add(1)
 		sem <- struct{}{}
-		prod := "mod_ssl"
-		ver := "2.8.4"
-		go func(prod, ver string) {
+		go func(cpeName []string) {
 			defer wg.Done()
 			defer func() { <-sem }()
 			client := NewNVDClient()
@@ -182,7 +180,7 @@ func processOutput(output string) string {
 
 			}
 
-		}(prod, ver)
+		}(cpeName)
 	}
 
 	wg.Wait()
