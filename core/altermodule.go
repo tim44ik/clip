@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image/color"
 	"slices"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -40,7 +41,7 @@ func alterdialog(a *SpuWindow, input *widget.Entry, b bool) {
 			return
 		}
 		m := &Module{
-			Name:    input.Text,
+			Name:    strings.TrimSpace(input.Text),
 			Content: a.selectedModule.Content,
 			output:  a.selectedModule.output,
 		}

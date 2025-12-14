@@ -14,10 +14,8 @@ import (
 	"time"
 
 	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/storage"
-	"fyne.io/fyne/v2/widget"
 	"github.com/phpdave11/gofpdf"
 )
 
@@ -31,30 +29,17 @@ type CVEInfo struct {
 	Links       []string
 }
 
-func PDFcreationWindow(a *SpuWindow) {
-	addmoduleDialog := dialog.NewCustomConfirm(
-		a.langmap[a.Modules.CurrentLang][35],
-		a.langmap[a.Modules.CurrentLang][23],
-		a.langmap[a.Modules.CurrentLang][24],
-		container.NewPadded(
-			container.NewBorder(widget.NewCheck(a.langmap[a.Modules.CurrentLang][34], func(b bool) { a.makePDF.process = b }),
-				nil, nil, nil)),
-		func(b bool) {
-			if b {
-				filesaveDialog := dialog.NewFileSave(
-					func(writer fyne.URIWriteCloser, err error) {
-						makePDFFile(a, writer, err)
-					}, a.Window)
-				filesaveDialog.SetFilter(storage.NewExtensionFileFilter([]string{".pdf"}))
-				filesaveDialog.Resize(fyne.NewSize(900, 500))
-				filesaveDialog.Show()
-			}
-		}, a.Window)
-	addmoduleDialog.Resize(fyne.NewSize(300, 200))
-	addmoduleDialog.Show()
+func PDFcreationWindow(Window fyne.Window, Profile string, langmap []string, makePDFFor []*Module) {
+	filesaveDialog := dialog.NewFileSave(
+		func(writer fyne.URIWriteCloser, err error) {
+			makePDFFile(Window, Profile, langmap, makePDFFor, writer, err)
+		}, Window)
+	filesaveDialog.SetFilter(storage.NewExtensionFileFilter([]string{".pdf"}))
+	filesaveDialog.Resize(fyne.NewSize(900, 500))
+	fyne.Do(func() { filesaveDialog.Show() })
 }
 
-func makePDFFile(a *SpuWindow, writer fyne.URIWriteCloser, err error) {
+func makePDFFile(Window fyne.Window, Profile string, langmap []string, makePDFFor []*Module, writer fyne.URIWriteCloser, err error) {
 	if err != nil || writer == nil {
 		return
 	}
@@ -68,9 +53,9 @@ func makePDFFile(a *SpuWindow, writer fyne.URIWriteCloser, err error) {
 	path += ".pdf"
 
 	if filepath.Base(path) == ".pdf" {
-		path = strings.TrimSuffix(a.Profiles.Path, ".json") + time.Now().Format(" 02.01.2006 15-04-05") + ".pdf"
+		path = strings.TrimSuffix(Profile, ".json") + time.Now().Format(" 02.01.2006 15-04-05") + ".pdf"
 	}
-	PDF(a, path)
+	PDF(Window, langmap, makePDFFor, path)
 }
 
 //go:embed TimesNewRoman.ttf
@@ -79,21 +64,21 @@ var tnrFont []byte
 //go:embed TimesNewRomanB.ttf
 var tnrbFont []byte
 
-func PDF(a *SpuWindow, path string) {
+func PDF(Window fyne.Window, langmap []string, makePDFFor []*Module, path string) {
 	pdf := gofpdf.New("P", "mm", "A4", "")
 	pdf.AddUTF8FontFromBytes("TimesNewRoman", "", tnrFont)
 	pdf.AddUTF8FontFromBytes("TimesNewRoman", "B", tnrbFont)
 	pdf.AddPage()
 	pdf.SetFont("TimesNewRoman", "", 22)
 	pdf.SetTextColor(0, 0, 0)
-	for _, m := range a.Modules.ChildModules {
+	for _, m := range makePDFFor {
 		pdf.SetFontSize(22)
 		pdf.SetFontStyle("B")
 		pdf.Cell(0, 10, m.Name)
 		pdf.Ln(15)
 		pdf.SetFontSize(14)
 		pdf.SetFontStyle("")
-		if a.makePDF.process {
+		if m.MakePDF.Process {
 			processedString := processOutput(m.output)
 			pdf.MultiCell(0, 10, processedString, "0", "L", false)
 		} else {
@@ -104,7 +89,7 @@ func PDF(a *SpuWindow, path string) {
 	}
 	e := pdf.OutputFileAndClose(path)
 	if e != nil {
-		dialog.ShowError(fmt.Errorf("%s:\n%s", a.langmap[a.Modules.CurrentLang][28], e), a.Window)
+		dialog.ShowError(fmt.Errorf("%s:\n%s", langmap[28], e), Window)
 	}
 }
 
@@ -116,14 +101,14 @@ func processOutput(output string) string {
 
 	softByLine, cvesByLine := FindCVEs(outputListed)
 
-	maxGoroutines := 4
+	maxGoroutines := 5
 	sem := make(chan struct{}, maxGoroutines)
 	counter := 0
 	var wg sync.WaitGroup
 
 	cpeNameData := make(map[string][]string, len(softByLine))
 	for soft := range softByLine {
-		if counter%4 == 0 {
+		if counter%5 == 0 && counter > 0 {
 			time.Sleep(30 * time.Second)
 		}
 		counter++
@@ -139,13 +124,14 @@ func processOutput(output string) string {
 			cpeNameData[soft] = cpeNameList
 			client.http.CloseIdleConnections()
 		}(soft)
+
 	}
 
 	wg.Wait()
 
 	cpeData := make(map[string][]*CVEInfo, len(softByLine))
 	for soft, cpeName := range cpeNameData {
-		if counter%4 == 0 {
+		if counter%5 == 0 && counter > 0 {
 			time.Sleep(30 * time.Second)
 		}
 		counter++
@@ -165,6 +151,7 @@ func processOutput(output string) string {
 			cpeData[soft] = respSlice
 			client.http.CloseIdleConnections()
 		}(cpeName)
+
 	}
 
 	wg.Wait()
@@ -172,7 +159,7 @@ func processOutput(output string) string {
 	cveData := make(map[string]*CVEInfo)
 
 	for key := range cvesByLine {
-		if counter%4 == 0 {
+		if counter%5 == 0 && counter > 0 {
 			time.Sleep(30 * time.Second)
 		}
 		counter++
@@ -188,6 +175,7 @@ func processOutput(output string) string {
 			cveData[cve] = info
 			client.http.CloseIdleConnections()
 		}(key)
+
 	}
 
 	wg.Wait()
@@ -196,10 +184,10 @@ func processOutput(output string) string {
 		if !slices.Contains(outputListed, "\nProcessing results:") {
 			outputListed = append(outputListed, "\nProcessing results:")
 		}
-		for cpe, info := range cpeData {
+		for cpe, lines := range softByLine {
 			if cpeData[cpe] != nil {
-				outputListed = append(outputListed, fmt.Sprintf("\n%s\nfound in lines: %s\nKnown CVEs related to that:", cpe, softByLine[cpe][:len(softByLine[cpe])-2]))
-				for _, cve := range info {
+				outputListed = append(outputListed, fmt.Sprintf("\n%s\n    found in lines: %s\n    Known CVEs related to that:", cpe, lines[:len(lines)-2]))
+				for _, cve := range cpeData[cpe] {
 					outputListed = append(outputListed, cve.ID)
 					outputListed = appendOutput(outputListed, cve)
 				}
@@ -212,7 +200,7 @@ func processOutput(output string) string {
 			outputListed = append(outputListed, "\nProcessing results:")
 		}
 		for cve, info := range cveData {
-			outputListed = append(outputListed, fmt.Sprintf("\n%s\nfound in lines: %s", cve, cvesByLine[cve][:len(cvesByLine[cve])-2]))
+			outputListed = append(outputListed, fmt.Sprintf("\n%s\nFound in lines: %s", cve, cvesByLine[cve][:len(cvesByLine[cve])-2]))
 			outputListed = appendOutput(outputListed, info)
 		}
 	}
@@ -222,7 +210,7 @@ func processOutput(output string) string {
 
 func FindCVEs(lines []string) (software map[string]string, cve map[string]string) {
 	reCve := regexp.MustCompile(`CVE-\d{4}-\d{4,}`)
-	reSoft := regexp.MustCompile(`(?:CVE\-\d{4}\-\d{4,})|([\w\-]+(?:\s\d+)?)(?:\s*(?:[:\/\s\-\|]+|ver\.|v\.|version(?:\s*(?:[\\/:|]*)\s*))\s*)((?:(?:[\w\d]+(?:\.[\w\d]+)+(?:-[\w\d](?:\.[\w\d])+)?)|\d+H\d+|\d+|j[gk]\d+)(?:[\-\\\/]*(?:dev|beta|alpha)?))`)
+	reSoft := regexp.MustCompile(`(?:CVE\-\d{4}\-\d{4,})|(?:[Pp]ort[|\s:\\/]*\d{1,5})|(?:[Pp]ing[\s:]+\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?:\:\d{1,5})*)|([\w\-]+(?:\s\d+)?)(?:\s*(?:[:\/\s\-\|]+|ver\.|v\.|version(?:\s*(?:[\\/:|]*)\s*))\s*)((?:(?:[\w\d]+(?:\.[\w\d]+)+(?:-[\w\d](?:\.[\w\d])+)?)|\d+H\d+|\d+|j[gk]\d+)(?:[\-\\\/]*(?:dev|beta|alpha)?))`)
 
 	software = make(map[string]string)
 	cve = make(map[string]string)
@@ -236,8 +224,12 @@ func FindCVEs(lines []string) (software map[string]string, cve map[string]string
 		}
 
 		for _, f := range foundSoft {
+			f[1] = strings.ToLower(f[1])
+			f[2] = strings.ToLower(f[2])
+			if (f[1] != "" && f[1] != "version" && f[1] != "ver." && len(f[1]) > 2) && f[2] != "" {
+				software[strings.ReplaceAll(f[1]+":"+f[2], " ", "_")] = strconv.Itoa(i+1) + ", "
+			}
 
-			software[strings.ReplaceAll(strings.ToLower(f[1])+":"+f[2], " ", "_")] = strconv.Itoa(i+1) + ", "
 		}
 	}
 
@@ -245,20 +237,20 @@ func FindCVEs(lines []string) (software map[string]string, cve map[string]string
 }
 
 func appendOutput(outputListed []string, cveStruct *CVEInfo) []string {
-	outputListed = append(outputListed, fmt.Sprintf("Description: %s\n", strings.ToLower(cveStruct.Description[:1])+cveStruct.Description[1:]))
+	outputListed = append(outputListed, fmt.Sprintf("    \nDescription: %s\n", strings.ToLower(cveStruct.Description[:1])+cveStruct.Description[1:]))
 	if cveStruct.SeverityV40 != "" {
-		outputListed = append(outputListed, fmt.Sprintf("Severity calculated with V40 metrics: %s", cveStruct.SeverityV40))
+		outputListed = append(outputListed, fmt.Sprintf("    Severity calculated with V40 metrics: %s", cveStruct.SeverityV40))
 	}
 	if cveStruct.SeverityV31 != "" {
-		outputListed = append(outputListed, fmt.Sprintf("Severity calculated with V31 metrics: %s", cveStruct.SeverityV31))
+		outputListed = append(outputListed, fmt.Sprintf("    Severity calculated with V31 metrics: %s", cveStruct.SeverityV31))
 	}
 	if cveStruct.SeverityV30 != "" {
-		outputListed = append(outputListed, fmt.Sprintf("Severity calculated with V30 metrics: %s", cveStruct.SeverityV30))
+		outputListed = append(outputListed, fmt.Sprintf("    Severity calculated with V30 metrics: %s", cveStruct.SeverityV30))
 	}
 	if cveStruct.SeverityV2 != "" {
-		outputListed = append(outputListed, fmt.Sprintf("Severity calculated with V2 metrics: %s", cveStruct.SeverityV2))
+		outputListed = append(outputListed, fmt.Sprintf("    Severity calculated with V2 metrics: %s", cveStruct.SeverityV2))
 	}
-	outputListed = append(outputListed, "\nLinks:")
+	outputListed = append(outputListed, "\n    Links:")
 	outputListed = append(outputListed, cveStruct.Links...)
 	return outputListed
 }

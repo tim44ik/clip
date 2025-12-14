@@ -138,7 +138,7 @@ func (n *NVDClient) Fetch(link, subject string) (*CVEInfo, error) {
 		}
 		for _, r := range parsed.Vulnerabilities[0].CVE.References {
 			if !slices.Contains(r.Tags, "Broken Link") {
-				info.Links = append(info.Links, r.Url)
+				info.Links = append(info.Links, "        "+r.Url)
 			}
 		}
 		for _, r := range parsed.Vulnerabilities[0].CVE.Descriptions {

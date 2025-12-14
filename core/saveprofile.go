@@ -13,9 +13,9 @@ import (
 
 func SaveProfile(a *SpuWindow) {
 	a.applyModuleChanges()
-	switch a.Profiles.Exists {
+	switch a.profiles.exists {
 	case true:
-		makeJson(a, a.Profiles.Path)
+		makeJson(a, a.profiles.path)
 	case false:
 		SaveProfileAs(a)
 	}
@@ -41,7 +41,7 @@ func SaveProfileAs(a *SpuWindow) {
 				return
 			}
 
-			a.Profiles.Exists = true
+			a.profiles.exists = true
 			if filepath.Ext(path) != ".json" {
 				defer os.Remove(path)
 			}
@@ -55,7 +55,7 @@ func SaveProfileAs(a *SpuWindow) {
 func makeJson(a *SpuWindow, filename string) error {
 	filename = strings.TrimSuffix(filename, filepath.Ext(filename))
 	filename += ".json"
-	a.Profiles.Path = filename
+	a.profiles.path = filename
 	file, err := os.Create(filename)
 	if err != nil {
 		return err

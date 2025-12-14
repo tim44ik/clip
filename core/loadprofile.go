@@ -40,8 +40,8 @@ func loadInNewWindowDialogTrue(a *SpuWindow, reader fyne.URIReadCloser, err erro
 		return
 	}
 
-	newWindow.Profiles.Exists = true
-	newWindow.Profiles.Path = filename
+	newWindow.profiles.exists = true
+	newWindow.profiles.path = filename
 	newWindow.Window.Show()
 	newWindow.refreshModuleGui()
 }
@@ -77,8 +77,8 @@ func loadDialogTrue(a *SpuWindow, reader fyne.URIReadCloser, err error) {
 		return
 	}
 
-	a.Profiles.Exists = true
-	a.Profiles.Path = filename
+	a.profiles.exists = true
+	a.profiles.path = filename
 	a.refreshModuleGui()
 }
 
