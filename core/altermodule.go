@@ -42,7 +42,7 @@ func alterdialog(a *SpuWindow, input *widget.Entry, b bool) {
 		m := &Module{
 			Name:    input.Text,
 			Content: a.selectedModule.Content,
-			Output:  a.selectedModule.Output,
+			output:  a.selectedModule.output,
 		}
 		a.Modules.ChildModules[slices.Index(a.Modules.ChildModules, a.selectedModule)] = m
 		a.selectedModule = m

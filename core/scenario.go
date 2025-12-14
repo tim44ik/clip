@@ -32,7 +32,7 @@ func (s *Scenario) execute(ctx context.Context, outputter func(string, *Module))
 	for _, m := range s.ModulesStruct {
 		wg.Add(1)
 		go func(m *Module) {
-			m.Output = ""
+			m.output = ""
 			localOutputter := func(s string) {
 				go outputter(s, m)
 			}

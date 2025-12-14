@@ -11,7 +11,7 @@ func FullOutput(a *SpuWindow) {
 	a.applyModuleChanges()
 	input := widget.NewMultiLineEntry()
 	input.Disabled()
-	input.Text = a.selectedModule.Output
+	input.Text = a.selectedModule.output
 	scroll := container.NewVScroll(input)
 	addmoduleDialog := dialog.NewCustomConfirm(
 		a.langmap[a.Modules.CurrentLang][33],

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -64,7 +65,7 @@ type NVDClient struct {
 
 func NewNVDClient() *NVDClient {
 	return &NVDClient{
-		http: &http.Client{Timeout: 12 * time.Second},
+		http: &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
@@ -112,6 +113,7 @@ func (n *NVDClient) Fetch(link, subject string) (*CVEInfo, error) {
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != 200 {
+		fmt.Println("не нормас " + strconv.Itoa(resp.StatusCode))
 		return nil, fmt.Errorf("NVD: %s", string(body))
 	}
 	var parsed NVDResponse
@@ -145,5 +147,6 @@ func (n *NVDClient) Fetch(link, subject string) (*CVEInfo, error) {
 			}
 		}
 	}
+
 	return info, nil
 }

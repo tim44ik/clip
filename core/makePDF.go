@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -63,15 +64,13 @@ func makePDFFile(a *SpuWindow, writer fyne.URIWriteCloser, err error) {
 		defer os.Remove(path)
 	}
 
-	a.makePDF.pdfPath = path
-	a.makePDF.pdfPath = strings.TrimSuffix(a.makePDF.pdfPath, filepath.Ext(a.makePDF.pdfPath))
-	a.makePDF.pdfPath += ".pdf"
+	path = strings.TrimSuffix(path, filepath.Ext(path))
+	path += ".pdf"
 
-	if filepath.Base(a.makePDF.pdfPath) == ".pdf" {
-		a.makePDF.pdfPath = strings.TrimSuffix(a.Profiles.Path, ".json") + time.Now().Format(" 02.01.2006 15-04-05") + a.makePDF.pdfPath
+	if filepath.Base(path) == ".pdf" {
+		path = strings.TrimSuffix(a.Profiles.Path, ".json") + time.Now().Format(" 02.01.2006 15-04-05") + ".pdf"
 	}
-	PDF(a)
-
+	PDF(a, path)
 }
 
 //go:embed TimesNewRoman.ttf
@@ -80,7 +79,7 @@ var tnrFont []byte
 //go:embed TimesNewRomanB.ttf
 var tnrbFont []byte
 
-func PDF(a *SpuWindow) {
+func PDF(a *SpuWindow, path string) {
 	pdf := gofpdf.New("P", "mm", "A4", "")
 	pdf.AddUTF8FontFromBytes("TimesNewRoman", "", tnrFont)
 	pdf.AddUTF8FontFromBytes("TimesNewRoman", "B", tnrbFont)
@@ -95,15 +94,15 @@ func PDF(a *SpuWindow) {
 		pdf.SetFontSize(14)
 		pdf.SetFontStyle("")
 		if a.makePDF.process {
-			processedString := processOutput(m.Output)
+			processedString := processOutput(m.output)
 			pdf.MultiCell(0, 10, processedString, "0", "L", false)
 		} else {
-			enumed := utility.EnumLines(m.Output)
+			enumed := utility.EnumLines(m.output)
 			pdf.MultiCell(0, 10, strings.Join(enumed, "\n"), "0", "L", false)
 		}
 
 	}
-	e := pdf.OutputFileAndClose(a.makePDF.pdfPath)
+	e := pdf.OutputFileAndClose(path)
 	if e != nil {
 		dialog.ShowError(fmt.Errorf("%s:\n%s", a.langmap[a.Modules.CurrentLang][28], e), a.Window)
 	}
@@ -111,43 +110,28 @@ func PDF(a *SpuWindow) {
 
 func processOutput(output string) string {
 
+	client := NewNVDClient()
+
 	outputListed := utility.EnumLines(output)
 
 	softByLine, cvesByLine := FindCVEs(outputListed)
 
-	maxGoroutines := 2
+	maxGoroutines := 4
 	sem := make(chan struct{}, maxGoroutines)
-
-	// var wg sync.WaitGroup
-	cveData := make(map[string]*CVEInfo)
-
-	for key := range cvesByLine {
-		// wg.Add(1)
-		sem <- struct{}{}
-
-		func(cve string) {
-			// defer wg.Done()
-			defer func() { <-sem }()
-			client := NewNVDClient()
-			info, err := client.Fetch("https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=", cve)
-			if err != nil {
-				return
-			}
-			cveData[cve] = info
-			client.http.CloseIdleConnections()
-		}(key)
-	}
-
-	// wg.Wait()
+	counter := 0
+	var wg sync.WaitGroup
 
 	cpeNameData := make(map[string][]string, len(softByLine))
 	for soft := range softByLine {
-		// wg.Add(1)
+		if counter%4 == 0 {
+			time.Sleep(30 * time.Second)
+		}
+		counter++
+		wg.Add(1)
 		sem <- struct{}{}
-		func(prod string) {
-			// defer wg.Done()
+		go func(prod string) {
+			defer wg.Done()
 			defer func() { <-sem }()
-			client := NewNVDClient()
 			cpeNameList, err := client.FetchCPEName(prod)
 			if err != nil {
 				return
@@ -157,16 +141,19 @@ func processOutput(output string) string {
 		}(soft)
 	}
 
-	// wg.Wait()
+	wg.Wait()
 
 	cpeData := make(map[string][]*CVEInfo, len(softByLine))
 	for soft, cpeName := range cpeNameData {
-		// wg.Add(1)
+		if counter%4 == 0 {
+			time.Sleep(30 * time.Second)
+		}
+		counter++
+		wg.Add(1)
 		sem <- struct{}{}
-		func(cpeName []string) {
-			// defer wg.Done()
+		go func(cpeName []string) {
+			defer wg.Done()
 			defer func() { <-sem }()
-			client := NewNVDClient()
 			var respSlice []*CVEInfo
 			for _, cpe := range cpeName {
 				resp, err := client.Fetch("https://services.nvd.nist.gov/rest/json/cves/2.0?cpeName=", cpe)
@@ -180,7 +167,30 @@ func processOutput(output string) string {
 		}(cpeName)
 	}
 
-	// wg.Wait()
+	wg.Wait()
+
+	cveData := make(map[string]*CVEInfo)
+
+	for key := range cvesByLine {
+		if counter%4 == 0 {
+			time.Sleep(30 * time.Second)
+		}
+		counter++
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(cve string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			info, err := client.Fetch("https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=", cve)
+			if err != nil {
+				return
+			}
+			cveData[cve] = info
+			client.http.CloseIdleConnections()
+		}(key)
+	}
+
+	wg.Wait()
 
 	if len(cpeData) != 0 {
 		if !slices.Contains(outputListed, "\nProcessing results:") {
@@ -211,8 +221,8 @@ func processOutput(output string) string {
 }
 
 func FindCVEs(lines []string) (software map[string]string, cve map[string]string) {
-	reCve := regexp.MustCompile(`CVE-\d{4}-\d{4,7}`)
-	reSoft := regexp.MustCompile(`([\w\-]+(?:\s\d+)?)(?:\s*(?:[:\/\s\-\|]+|ver\.|v\.|version(?:\s*(?:[\\/:|]*)\s*))\s*)((?:(?:[\w\d]+(?:\.[\w\d]+)+(?:-[\w\d](?:\.[\w\d])+)?)|\d+H\d+|\d+|j[gk]\d+)(?:[-\\\/]*(?:dev|beta|alpha)?))`)
+	reCve := regexp.MustCompile(`CVE-\d{4}-\d{4,}`)
+	reSoft := regexp.MustCompile(`(?:CVE\-\d{4}\-\d{4,})|([\w\-]+(?:\s\d+)?)(?:\s*(?:[:\/\s\-\|]+|ver\.|v\.|version(?:\s*(?:[\\/:|]*)\s*))\s*)((?:(?:[\w\d]+(?:\.[\w\d]+)+(?:-[\w\d](?:\.[\w\d])+)?)|\d+H\d+|\d+|j[gk]\d+)(?:[\-\\\/]*(?:dev|beta|alpha)?))`)
 
 	software = make(map[string]string)
 	cve = make(map[string]string)
@@ -227,7 +237,7 @@ func FindCVEs(lines []string) (software map[string]string, cve map[string]string
 
 		for _, f := range foundSoft {
 
-			software[strings.ReplaceAll(f[1]+":"+f[2], " ", "_")] = strconv.Itoa(i+1) + ", "
+			software[strings.ReplaceAll(strings.ToLower(f[1])+":"+f[2], " ", "_")] = strconv.Itoa(i+1) + ", "
 		}
 	}
 
