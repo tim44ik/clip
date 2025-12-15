@@ -69,10 +69,10 @@ func CreateModuleButton(a *SpuWindow, m *Module) fyne.Widget {
 					}
 				}
 			}
-			return s
+			return strings.TrimSpace(s)
 		}(m.Name), func() { a.selectModule(m) })
 	}
-	return widget.NewButton(m.Name,
+	return widget.NewButton(strings.TrimSpace(m.Name),
 		func() {
 			a.applyModuleChanges()
 			a.selectModule(m)

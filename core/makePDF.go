@@ -101,14 +101,14 @@ func processOutput(output string) string {
 
 	softByLine, cvesByLine := FindCVEs(outputListed)
 
-	maxGoroutines := 5
+	maxGoroutines := 4
 	sem := make(chan struct{}, maxGoroutines)
 	counter := 0
 	var wg sync.WaitGroup
 
 	cpeNameData := make(map[string][]string, len(softByLine))
 	for soft := range softByLine {
-		if counter%5 == 0 && counter > 0 {
+		if counter%4 == 0 && counter > 0 {
 			time.Sleep(30 * time.Second)
 		}
 		counter++
@@ -131,7 +131,7 @@ func processOutput(output string) string {
 
 	cpeData := make(map[string][]*CVEInfo, len(softByLine))
 	for soft, cpeName := range cpeNameData {
-		if counter%5 == 0 && counter > 0 {
+		if counter%4 == 0 && counter > 0 {
 			time.Sleep(30 * time.Second)
 		}
 		counter++
@@ -159,7 +159,7 @@ func processOutput(output string) string {
 	cveData := make(map[string]*CVEInfo)
 
 	for key := range cvesByLine {
-		if counter%5 == 0 && counter > 0 {
+		if counter%4 == 0 && counter > 0 {
 			time.Sleep(30 * time.Second)
 		}
 		counter++
