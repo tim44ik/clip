@@ -13,7 +13,13 @@ import (
 
 func ChangeLanguageWindow(a *SpuWindow) {
 	a.applyModuleChanges()
-	options := []string{"English", "Русский"}
+	options := func(langmap map[string][]string) []string {
+		slice := []string{}
+		for key := range langmap {
+			slice = append(slice, key)
+		}
+		return slice
+	}(a.langmap)
 	dropoutMenu := widget.NewSelectEntry(options)
 	langwindow := dialog.NewCustomConfirm(a.langmap[a.Modules.CurrentLang][29], a.langmap[a.Modules.CurrentLang][30], a.langmap[a.Modules.CurrentLang][24],
 		container.NewBorder(

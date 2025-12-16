@@ -174,15 +174,15 @@ func (a *SpuWindow) selectModule(m *Module) {
 	if a.elms.createPDFCheck != nil && a.elms.processOutputCheck != nil {
 		if a.selectedModule == a.Modules.MainModule {
 			for _, m := range a.Modules.ChildModules {
-				if m.MakePDF.Do == true {
+				if m.MakePDF.Do {
 					a.elms.createPDFCheck.Checked = true
 					break
 				}
 				a.elms.createPDFCheck.Checked = false
 			}
-			if a.elms.createPDFCheck.Checked == true {
+			if a.elms.createPDFCheck.Checked {
 				for _, m := range a.Modules.ChildModules {
-					if m.MakePDF.Process == true {
+					if m.MakePDF.Process {
 						a.elms.processOutputCheck.Checked = true
 						break
 					}
@@ -190,11 +190,11 @@ func (a *SpuWindow) selectModule(m *Module) {
 				}
 			}
 		} else {
-			if a.selectedModule.MakePDF.Do == true && a.selectedModule.MakePDF.Process == true {
+			if a.selectedModule.MakePDF.Do && a.selectedModule.MakePDF.Process {
 				a.elms.createPDFCheck.Checked = true
 				a.elms.processOutputCheck.Checked = true
 				a.elms.processOutputCheck.Enable()
-			} else if a.selectedModule.MakePDF.Do == true && a.selectedModule.MakePDF.Process == false {
+			} else if a.selectedModule.MakePDF.Do && !a.selectedModule.MakePDF.Process {
 				a.elms.createPDFCheck.Checked = true
 				a.elms.processOutputCheck.Checked = false
 				a.elms.processOutputCheck.Enable()
@@ -384,11 +384,11 @@ func (a *SpuWindow) fullrefresh() {
 	a.elms.title.Text = fmt.Sprintf("%s '%s'", a.langmap[a.Modules.CurrentLang][15], func(s string) string {
 		if !strings.Contains(s, "\n") && len(s) < 30 {
 			return s
-		} else if len(s) > 30 {
-			return s[:31] + "..."
+		} else if strings.Contains(s, "\n") && len(s) < 30 {
+			return strings.ReplaceAll(s, "\n", " ")
 		}
 		s = strings.ReplaceAll(s, "\n", " ")
-		return s[:31] + "..."
+		return s[:31] + " ..."
 	}(a.selectedModule.Name))
 
 	a.elms.fullOutputContainer.RemoveAll()
@@ -411,20 +411,21 @@ func (a *SpuWindow) fullrefresh() {
 	})
 
 	a.elms.createPDFCheck = widget.NewCheck(a.langmap[a.Modules.CurrentLang][2], func(b bool) {
-		if a.elms.createPDFCheck.Checked == false {
+		a.selectedModule.MakePDF.Do = b
+		if !a.selectedModule.MakePDF.Do {
 			a.elms.processOutputCheck.SetChecked(false)
 			a.elms.processOutputCheck.Disable()
 		} else {
 			a.elms.processOutputCheck.Enable()
 		}
-		a.selectedModule.MakePDF.Do = b
 		if a.selectedModule == a.Modules.MainModule {
 			for _, m := range a.Modules.ChildModules {
 				m.MakePDF.Do = b
 			}
 		}
 	})
-
+	a.elms.createPDFCheck.Checked = a.selectedModule.MakePDF.Do
+	a.elms.processOutputCheck.Checked = a.selectedModule.MakePDF.Process
 	a.elms.bottomPanelCheckboxes.RemoveAll()
 	a.elms.bottomPanelCheckboxes.Add(a.elms.createPDFCheck)
 	a.elms.bottomPanelCheckboxes.Add(a.elms.processOutputCheck)

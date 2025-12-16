@@ -81,6 +81,7 @@ func PDF(Window fyne.Window, langmap []string, makePDFFor []*Module, path string
 		if m.MakePDF.Process {
 			processedString := processOutput(m.output)
 			pdf.MultiCell(0, 10, processedString, "0", "L", false)
+			time.Sleep(30 * time.Second)
 		} else {
 			enumed := utility.EnumLines(m.output)
 			pdf.MultiCell(0, 10, strings.Join(enumed, "\n"), "0", "L", false)
@@ -101,17 +102,13 @@ func processOutput(output string) string {
 
 	softByLine, cvesByLine := FindCVEs(outputListed)
 
-	maxGoroutines := 4
+	maxGoroutines := 5
 	sem := make(chan struct{}, maxGoroutines)
-	counter := 0
 	var wg sync.WaitGroup
+	var mu sync.Mutex
 
 	cpeNameData := make(map[string][]string, len(softByLine))
 	for soft := range softByLine {
-		if counter%4 == 0 && counter > 0 {
-			time.Sleep(30 * time.Second)
-		}
-		counter++
 		wg.Add(1)
 		sem <- struct{}{}
 		go func(prod string) {
@@ -121,20 +118,17 @@ func processOutput(output string) string {
 			if err != nil {
 				return
 			}
+			mu.Lock()
 			cpeNameData[soft] = cpeNameList
+			mu.Unlock()
 			client.http.CloseIdleConnections()
 		}(soft)
-
 	}
 
 	wg.Wait()
 
 	cpeData := make(map[string][]*CVEInfo, len(softByLine))
 	for soft, cpeName := range cpeNameData {
-		if counter%4 == 0 && counter > 0 {
-			time.Sleep(30 * time.Second)
-		}
-		counter++
 		wg.Add(1)
 		sem <- struct{}{}
 		go func(cpeName []string) {
@@ -148,10 +142,11 @@ func processOutput(output string) string {
 				}
 				respSlice = append(respSlice, resp)
 			}
+			mu.Lock()
 			cpeData[soft] = respSlice
+			mu.Unlock()
 			client.http.CloseIdleConnections()
 		}(cpeName)
-
 	}
 
 	wg.Wait()
@@ -159,10 +154,6 @@ func processOutput(output string) string {
 	cveData := make(map[string]*CVEInfo)
 
 	for key := range cvesByLine {
-		if counter%4 == 0 && counter > 0 {
-			time.Sleep(30 * time.Second)
-		}
-		counter++
 		wg.Add(1)
 		sem <- struct{}{}
 		go func(cve string) {
@@ -172,10 +163,11 @@ func processOutput(output string) string {
 			if err != nil {
 				return
 			}
+			mu.Lock()
 			cveData[cve] = info
+			mu.Unlock()
 			client.http.CloseIdleConnections()
 		}(key)
-
 	}
 
 	wg.Wait()

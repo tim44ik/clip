@@ -1,14 +1,19 @@
 package core
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	"golang.org/x/time/rate"
 )
 
 type NVDResponse struct {
@@ -60,18 +65,27 @@ type SoftVerLookup struct {
 }
 
 type NVDClient struct {
-	http *http.Client
+	mu      sync.Mutex
+	limiter *rate.Limiter
+	http    *http.Client
 }
 
 func NewNVDClient() *NVDClient {
 	return &NVDClient{
-		http: &http.Client{Timeout: 10 * time.Second},
+		limiter: rate.NewLimiter(rate.Every((time.Duration(rand.Intn(1000)+6000))*time.Millisecond), 1),
+		http:    &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
 func (n *NVDClient) FetchCPEName(prod string) ([]string, error) {
+	n.limiter.Wait(context.Background())
+
 	matchStringQuery := fmt.Sprintf("https://services.nvd.nist.gov/rest/json/cpematch/2.0?matchStringSearch=cpe:2.3:*:*:%s", prod)
+
+	n.mu.Lock()
 	resp, err := n.http.Get(matchStringQuery)
+	n.mu.Unlock()
+
 	if err != nil {
 		return nil, err
 	}
@@ -79,6 +93,7 @@ func (n *NVDClient) FetchCPEName(prod string) ([]string, error) {
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != 200 {
+		fmt.Println("не нормас " + strconv.Itoa(resp.StatusCode))
 		return nil, fmt.Errorf("NVD: %s", string(body))
 	}
 
@@ -104,8 +119,14 @@ func (n *NVDClient) FetchCPEName(prod string) ([]string, error) {
 }
 
 func (n *NVDClient) Fetch(link, subject string) (*CVEInfo, error) {
+	n.limiter.Wait(context.Background())
+
 	url := link + subject
+
+	n.mu.Lock()
 	resp, err := n.http.Get(url)
+	n.mu.Unlock()
+
 	if err != nil {
 		return nil, err
 	}

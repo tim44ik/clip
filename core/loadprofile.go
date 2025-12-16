@@ -44,6 +44,7 @@ func loadInNewWindowDialogTrue(a *SpuWindow, reader fyne.URIReadCloser, err erro
 	newWindow.profiles.path = filename
 	newWindow.Window.Show()
 	newWindow.refreshModuleGui()
+	newWindow.fullrefresh()
 }
 
 func LoadProfile(a *SpuWindow) {
@@ -80,6 +81,7 @@ func loadDialogTrue(a *SpuWindow, reader fyne.URIReadCloser, err error) {
 	a.profiles.exists = true
 	a.profiles.path = filename
 	a.refreshModuleGui()
+	a.fullrefresh()
 }
 
 func readJson(a *SpuWindow, path string) error {
