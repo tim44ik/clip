@@ -8,7 +8,6 @@ import (
 	"math/rand"
 	"net/http"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -65,20 +64,20 @@ type SoftVerLookup struct {
 }
 
 type NVDClient struct {
-	mu      sync.Mutex
-	limiter *rate.Limiter
-	http    *http.Client
+	mu   sync.Mutex
+	http *http.Client
 }
 
-func NewNVDClient() *NVDClient {
+var limiter = rate.NewLimiter(rate.Every((time.Duration(rand.Intn(1000)+6000))*time.Millisecond), 1)
+
+func NewNVDClient(ctx context.Context) *NVDClient {
 	return &NVDClient{
-		limiter: rate.NewLimiter(rate.Every((time.Duration(rand.Intn(1000)+6000))*time.Millisecond), 1),
-		http:    &http.Client{Timeout: 10 * time.Second},
+		http: &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
-func (n *NVDClient) FetchCPEName(prod string) ([]string, error) {
-	n.limiter.Wait(context.Background())
+func (n *NVDClient) FetchCPEName(prod string, ctx context.Context) ([]string, error) {
+	limiter.Wait(ctx)
 
 	matchStringQuery := fmt.Sprintf("https://services.nvd.nist.gov/rest/json/cpematch/2.0?matchStringSearch=cpe:2.3:*:*:%s", prod)
 
@@ -93,7 +92,6 @@ func (n *NVDClient) FetchCPEName(prod string) ([]string, error) {
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != 200 {
-		fmt.Println("не нормас " + strconv.Itoa(resp.StatusCode))
 		return nil, fmt.Errorf("NVD: %s", string(body))
 	}
 
@@ -118,8 +116,8 @@ func (n *NVDClient) FetchCPEName(prod string) ([]string, error) {
 	return success, nil
 }
 
-func (n *NVDClient) Fetch(link, subject string) (*CVEInfo, error) {
-	n.limiter.Wait(context.Background())
+func (n *NVDClient) Fetch(link, subject string, ctx context.Context) (*CVEInfo, error) {
+	limiter.Wait(ctx)
 
 	url := link + subject
 
@@ -134,7 +132,6 @@ func (n *NVDClient) Fetch(link, subject string) (*CVEInfo, error) {
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != 200 {
-		fmt.Println("не нормас " + strconv.Itoa(resp.StatusCode))
 		return nil, fmt.Errorf("NVD: %s", string(body))
 	}
 	var parsed NVDResponse
@@ -159,7 +156,7 @@ func (n *NVDClient) Fetch(link, subject string) (*CVEInfo, error) {
 		}
 		for _, r := range parsed.Vulnerabilities[0].CVE.References {
 			if !slices.Contains(r.Tags, "Broken Link") {
-				info.Links = append(info.Links, "        "+r.Url)
+				info.Links = append(info.Links, "        "+strings.TrimSpace(r.Url))
 			}
 		}
 		for _, r := range parsed.Vulnerabilities[0].CVE.Descriptions {

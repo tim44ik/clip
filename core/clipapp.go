@@ -263,7 +263,8 @@ func (a *SpuWindow) beginScenario() {
 		if a.currentScenario == scenario {
 			fyne.DoAndWait(func() { a.elms.activity.Hide() })
 			a.currentScenario = nil
-			if !a.filterPDF() {
+
+			if !a.filterPDF(ctx) {
 				dialog.ShowInformation(a.langmap[a.Modules.CurrentLang][17], a.langmap[a.Modules.CurrentLang][18], a.Window)
 			}
 
@@ -322,7 +323,7 @@ func (a *SpuWindow) addModuleOutput(module *Module, line string) {
 	}
 }
 
-func (a *SpuWindow) filterPDF() bool {
+func (a *SpuWindow) filterPDF(ctx context.Context) bool {
 	makePDFFor := []*Module{}
 	for _, m := range a.Modules.ChildModules {
 		if m.MakePDF.Do {
@@ -330,7 +331,7 @@ func (a *SpuWindow) filterPDF() bool {
 		}
 	}
 	if len(makePDFFor) > 0 {
-		PDFcreationWindow(a.Window, a.profiles.path, a.langmap[a.Modules.CurrentLang], makePDFFor)
+		go PDFcreationWindow(a, makePDFFor, ctx)
 		return true
 	}
 	return false
@@ -357,7 +358,7 @@ func (a *SpuWindow) fullrefresh() {
 			fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][10], func() { a.interruptScenario() }),
 			fyne.NewMenuItem(a.langmap[a.Modules.CurrentLang][11], func() {
 				a.interruptScenario()
-				a.filterPDF()
+				a.filterPDF(context.Background())
 			},
 			),
 		)))
