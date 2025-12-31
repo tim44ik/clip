@@ -92,7 +92,7 @@ func (n *NVDClient) FetchCPEName(prod string, ctx context.Context) ([]string, er
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("NVD: %s", string(body))
+		return nil, fmt.Errorf("%s", string(body))
 	}
 
 	var parsed SoftVerLookup
@@ -116,7 +116,7 @@ func (n *NVDClient) FetchCPEName(prod string, ctx context.Context) ([]string, er
 	return success, nil
 }
 
-func (n *NVDClient) Fetch(link, subject string, ctx context.Context) (*CVEInfo, error) {
+func (n *NVDClient) Fetch(link, subject string, ctx context.Context) ([]*CVEInfo, error) {
 	limiter.Wait(ctx)
 
 	url := link + subject
@@ -141,30 +141,43 @@ func (n *NVDClient) Fetch(link, subject string, ctx context.Context) (*CVEInfo, 
 	if parsed.TotalResults == 0 {
 		return nil, fmt.Errorf("no CVE was found")
 	}
-	info := &CVEInfo{}
+	infoSlice := []*CVEInfo{}
 
-	if len(parsed.Vulnerabilities) > 0 {
-		info.ID = parsed.Vulnerabilities[0].CVE.ID
-		if len(parsed.Vulnerabilities[0].CVE.Metrics.CvssMetricV2) > 0 {
-			info.SeverityV2 = parsed.Vulnerabilities[0].CVE.Metrics.CvssMetricV2[0].BaseSeverity
-		} else if len(parsed.Vulnerabilities[0].CVE.Metrics.CvssMetricV30) > 0 {
-			info.SeverityV30 = parsed.Vulnerabilities[0].CVE.Metrics.CvssMetricV30[0].CvssData.BaseSeverity
-		} else if len(parsed.Vulnerabilities[0].CVE.Metrics.CvssMetricV31) > 0 {
-			info.SeverityV31 = parsed.Vulnerabilities[0].CVE.Metrics.CvssMetricV31[0].CvssData.BaseSeverity
-		} else if len(parsed.Vulnerabilities[0].CVE.Metrics.CvssMetricV40) > 0 {
-			info.SeverityV40 = parsed.Vulnerabilities[0].CVE.Metrics.CvssMetricV40[0].CvssData.BaseSeverity
+	for _, vulnerability := range parsed.Vulnerabilities {
+		info := &CVEInfo{}
+		info.ID = vulnerability.CVE.ID
+		if vulnerability.CVE.Metrics.CvssMetricV2 != nil {
+			info.SeverityV2 = vulnerability.CVE.Metrics.CvssMetricV2[0].BaseSeverity
 		}
-		for _, r := range parsed.Vulnerabilities[0].CVE.References {
-			if !slices.Contains(r.Tags, "Broken Link") {
-				info.Links = append(info.Links, "        "+strings.TrimSpace(r.Url))
+		if vulnerability.CVE.Metrics.CvssMetricV30 != nil {
+			info.SeverityV30 = vulnerability.CVE.Metrics.CvssMetricV30[0].CvssData.BaseSeverity
+		}
+		if vulnerability.CVE.Metrics.CvssMetricV31 != nil {
+			info.SeverityV31 = vulnerability.CVE.Metrics.CvssMetricV31[0].CvssData.BaseSeverity
+		}
+		if vulnerability.CVE.Metrics.CvssMetricV40 != nil {
+			info.SeverityV40 = vulnerability.CVE.Metrics.CvssMetricV40[0].CvssData.BaseSeverity
+		}
+		for _, r := range vulnerability.CVE.References {
+			if !slices.Contains(info.Links, r.Url) {
+				if r.Tags != nil {
+					if !slices.Contains(r.Tags, "Broken Link") {
+						info.Links = append(info.Links, r.Url)
+					}
+				} else {
+					info.Links = append(info.Links, r.Url)
+				}
+			}
+			if len(info.Links) == 10 {
+				break
 			}
 		}
-		for _, r := range parsed.Vulnerabilities[0].CVE.Descriptions {
+		for _, r := range vulnerability.CVE.Descriptions {
 			if r.Language == "en" {
 				info.Description = r.Value
 			}
 		}
+		infoSlice = append(infoSlice, info)
 	}
-
-	return info, nil
+	return infoSlice, nil
 }
