@@ -1,10 +1,5 @@
 package core
 
-import(
-	"os"
-	"strings"
-)
-
 func LangmapInit(a *ClipWindow) {
 	a.langmap = make(map[string][]string)
 	a.langmap["en"] =
@@ -55,6 +50,4 @@ func LangmapInit(a *ClipWindow) {
 			"Изменить язык", "Применить",
 			"Выберите язык", "Посмотреть весь вывод", "Весь вывод программы",
 			"Обработать вывод", "Идет формирование PDF-отчета"}
-	a.Modules.CurrentLang = strings.SplitN(os.Getenv("LANG"), "_", 1)[0]
-	fmt.Println(a.Modules.CurrentLang)
 }
