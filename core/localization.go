@@ -1,8 +1,13 @@
 package core
 
-func LangmapInit(a *SpuWindow) {
+import(
+	"os"
+	"strings"
+)
+
+func LangmapInit(a *ClipWindow) {
 	a.langmap = make(map[string][]string)
-	a.langmap["English"] =
+	a.langmap["en"] =
 		[]string{"Main",
 			"Threads Number",
 			"Make PDF report       ",
@@ -22,9 +27,9 @@ func LangmapInit(a *SpuWindow) {
 			"Error occured while making PDF",
 			"Change language", "Apply",
 			"Choose language", "View full output", "Full output",
-			"Process output", "Choose options for PDF report"}
+			"Process output", "Creating PDF"}
 
-	a.langmap["Русский"] =
+	a.langmap["ru"] =
 		[]string{"Главная",
 			"Количество потоков",
 			"Сформировать PDF отчёт",
@@ -49,6 +54,7 @@ func LangmapInit(a *SpuWindow) {
 			"Ошибка при создании PDF",
 			"Изменить язык", "Применить",
 			"Выберите язык", "Посмотреть весь вывод", "Весь вывод программы",
-			"Обработать вывод", "Выберите опции для PDF отчета"}
-
+			"Обработать вывод", "Идет формирование PDF-отчета"}
+	a.Modules.CurrentLang = strings.SplitN(os.Getenv("LANG"), "_", 1)[0]
+	fmt.Println(a.Modules.CurrentLang)
 }

@@ -11,7 +11,7 @@ import (
 	"fyne.io/fyne/v2/storage"
 )
 
-func SaveProfile(a *SpuWindow) {
+func SaveProfile(a *ClipWindow) {
 	a.applyModuleChanges()
 	switch a.profiles.exists {
 	case true:
@@ -21,7 +21,7 @@ func SaveProfile(a *SpuWindow) {
 	}
 }
 
-func SaveProfileAs(a *SpuWindow) {
+func SaveProfileAs(a *ClipWindow) {
 	a.applyModuleChanges()
 
 	filesavedialog := dialog.NewFileSave(
@@ -52,7 +52,7 @@ func SaveProfileAs(a *SpuWindow) {
 	filesavedialog.Show()
 }
 
-func makeJson(a *SpuWindow, filename string) error {
+func makeJson(a *ClipWindow, filename string) error {
 	filename = strings.TrimSuffix(filename, filepath.Ext(filename))
 	filename += ".json"
 	a.profiles.path = filename

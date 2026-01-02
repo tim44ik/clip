@@ -7,7 +7,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-func FullOutput(a *SpuWindow) {
+func FullOutput(a *ClipWindow) {
 	a.applyModuleChanges()
 	input := widget.NewMultiLineEntry()
 	input.Disabled()

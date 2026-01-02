@@ -2,7 +2,7 @@ package core
 
 import "slices"
 
-func Delete(a *SpuWindow) {
+func Delete(a *ClipWindow) {
 	if a.selectedModule == a.Modules.MainModule {
 		return
 	}

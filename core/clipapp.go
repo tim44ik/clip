@@ -18,7 +18,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-type SpuWindow struct {
+type ClipWindow struct {
 	Window fyne.Window
 
 	selectedModule *Module
@@ -60,12 +60,12 @@ type SpuWindow struct {
 	}
 }
 
-func CreateWindow() (a *SpuWindow) {
-	a = &SpuWindow{}
+func CreateWindow() (a *ClipWindow) {
+	a = &ClipWindow{}
 	LangmapInit(a)
-
-	if a.Modules.CurrentLang == "" {
-		a.Modules.CurrentLang = "English"
+	_, ok := a.langmap[a.Modules.CurrentLang]
+	if !ok {
+		a.Modules.CurrentLang = "en"
 	}
 
 	a.Modules.MainModule = &Module{Name: a.langmap[a.Modules.CurrentLang][0]}
@@ -78,7 +78,7 @@ func CreateWindow() (a *SpuWindow) {
 	return
 }
 
-func (a *SpuWindow) buildWindow(app fyne.App) {
+func (a *ClipWindow) buildWindow(app fyne.App) {
 	a.Window = app.NewWindow("clip")
 	a.elms.title = canvas.NewText("", color.Black)
 	a.elms.title.TextSize = 16
@@ -157,7 +157,7 @@ func (a *SpuWindow) buildWindow(app fyne.App) {
 	a.elms.activity.Hide()
 }
 
-func (a *SpuWindow) selectModule(m *Module) {
+func (a *ClipWindow) selectModule(m *Module) {
 	a.selectedModule = m
 	a.elms.title.Text = fmt.Sprintf("%s '%s'", a.langmap[a.Modules.CurrentLang][15], func(s string) string {
 		if !strings.Contains(s, "\n") && len(s) < 30 {
@@ -218,14 +218,14 @@ func (a *SpuWindow) selectModule(m *Module) {
 	a.elms.bottomPanelCheckboxes.Refresh()
 }
 
-func (a *SpuWindow) applyModuleChanges() {
+func (a *ClipWindow) applyModuleChanges() {
 	if a.selectedModule == nil {
 		return
 	}
 	a.selectedModule.Content = a.elms.moduleContentEntry.Text
 }
 
-func (a *SpuWindow) beginScenario() {
+func (a *ClipWindow) beginScenario() {
 	if len(a.Modules.ChildModules) == 0 {
 		return
 	}
@@ -273,7 +273,7 @@ func (a *SpuWindow) beginScenario() {
 
 }
 
-func (a *SpuWindow) interruptScenario() {
+func (a *ClipWindow) interruptScenario() {
 	if a.currentScenario == nil {
 		dialog.ShowError(fmt.Errorf("%s", a.langmap[a.Modules.CurrentLang][19]), a.Window)
 		return
@@ -287,11 +287,11 @@ func (a *SpuWindow) interruptScenario() {
 	dialog.ShowInformation(a.langmap[a.Modules.CurrentLang][20], a.langmap[a.Modules.CurrentLang][21], a.Window)
 }
 
-func (a *SpuWindow) selectMainModule() {
+func (a *ClipWindow) selectMainModule() {
 	a.selectModule(a.Modules.MainModule)
 }
 
-func (a *SpuWindow) refreshModuleGui() {
+func (a *ClipWindow) refreshModuleGui() {
 	a.elms.modulesPanel.RemoveAll()
 	for _, m := range a.Modules.ChildModules {
 		a.elms.modulesPanel.Add(CreateModuleButton(a, m))
@@ -307,7 +307,7 @@ func (a *SpuWindow) refreshModuleGui() {
 
 }
 
-func (a *SpuWindow) addModuleOutput(module *Module, line string) {
+func (a *ClipWindow) addModuleOutput(module *Module, line string) {
 	module.output += line
 	if module == a.selectedModule {
 		a.elms.moduleOutputEntryMutex.Lock()
@@ -323,7 +323,7 @@ func (a *SpuWindow) addModuleOutput(module *Module, line string) {
 	}
 }
 
-func (a *SpuWindow) filterPDF(ctx context.Context) bool {
+func (a *ClipWindow) filterPDF(ctx context.Context) bool {
 	makePDFFor := []*Module{}
 	for _, m := range a.Modules.ChildModules {
 		if m.MakePDF.Do {
@@ -337,7 +337,7 @@ func (a *SpuWindow) filterPDF(ctx context.Context) bool {
 	return false
 }
 
-func (a *SpuWindow) fullrefresh() {
+func (a *ClipWindow) fullrefresh() {
 	a.elms.topPanel.RemoveAll()
 	a.elms.topPanel.Add(
 		utility.NewDropButton(theme.FolderOpenIcon(), a.Window.Canvas(), fyne.NewMenu("Profiles",

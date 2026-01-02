@@ -38,7 +38,7 @@ type CVEInfo struct {
 	Links       []string
 }
 
-func PDFcreationWindow(a *SpuWindow, makePDFFor []*Module, ctx context.Context) {
+func PDFcreationWindow(a *ClipWindow, makePDFFor []*Module, ctx context.Context) {
 	filesaveDialog := dialog.NewFileSave(
 		func(writer fyne.URIWriteCloser, err error) {
 			go makePDFFile(a, makePDFFor, writer, err, ctx)
@@ -48,7 +48,7 @@ func PDFcreationWindow(a *SpuWindow, makePDFFor []*Module, ctx context.Context) 
 	fyne.Do(func() { filesaveDialog.Show() })
 }
 
-func makePDFFile(a *SpuWindow, makePDFFor []*Module, writer fyne.URIWriteCloser, err error, ctx context.Context) {
+func makePDFFile(a *ClipWindow, makePDFFor []*Module, writer fyne.URIWriteCloser, err error, ctx context.Context) {
 	if err != nil || writer == nil {
 		return
 	}
@@ -73,7 +73,7 @@ var tnrFont []byte
 //go:embed TimesNewRomanB.ttf
 var tnrbFont []byte
 
-func PDF(a *SpuWindow, makePDFFor []*Module, ctx context.Context, path string) {
+func PDF(a *ClipWindow, makePDFFor []*Module, ctx context.Context, path string) {
 	progressBar := widget.NewProgressBar()
 	progressWindow := dialog.NewCustomWithoutButtons("Creating PDF", progressBar, a.Window)
 	fyne.Do(func() { progressWindow.Show() })

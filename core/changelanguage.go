@@ -11,7 +11,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-func ChangeLanguageWindow(a *SpuWindow) {
+func ChangeLanguageWindow(a *ClipWindow) {
 	a.applyModuleChanges()
 	options := func(langmap map[string][]string) []string {
 		slice := []string{}

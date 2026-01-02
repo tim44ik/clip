@@ -13,7 +13,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-func Alter(a *SpuWindow) {
+func Alter(a *ClipWindow) {
 	a.applyModuleChanges()
 	input := widget.NewMultiLineEntry()
 	input.SetText(a.selectedModule.Name)
@@ -35,7 +35,7 @@ func Alter(a *SpuWindow) {
 	addmoduleDialog.Show()
 }
 
-func alterdialog(a *SpuWindow, input *widget.Entry, b bool) {
+func alterdialog(a *ClipWindow, input *widget.Entry, b bool) {
 	if b {
 		if input.Text == "" {
 			return

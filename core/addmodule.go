@@ -11,7 +11,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-func AddModule(a *SpuWindow) {
+func AddModule(a *ClipWindow) {
 	a.applyModuleChanges()
 	input := widget.NewMultiLineEntry()
 	scroll := container.NewVScroll(input)
@@ -31,7 +31,7 @@ func AddModule(a *SpuWindow) {
 	addmoduleDialog.Show()
 }
 
-func addDialog(a *SpuWindow, input *widget.Entry, b bool) {
+func addDialog(a *ClipWindow, input *widget.Entry, b bool) {
 	if b {
 		if input.Text == "" {
 			return
@@ -51,7 +51,7 @@ func addDialog(a *SpuWindow, input *widget.Entry, b bool) {
 	}
 }
 
-func CreateModuleButton(a *SpuWindow, m *Module) fyne.Widget {
+func CreateModuleButton(a *ClipWindow, m *Module) fyne.Widget {
 	if len(m.Name) > 18 && !strings.Contains(m.Name, "\n") {
 		return widget.NewButton(func(s string) string {
 			if len(s) > 18 {

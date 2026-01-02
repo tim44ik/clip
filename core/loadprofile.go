@@ -9,7 +9,7 @@ import (
 	"fyne.io/fyne/v2/storage"
 )
 
-func LoadProfileInNewWindow(a *SpuWindow) {
+func LoadProfileInNewWindow(a *ClipWindow) {
 	fileOpenDialog := dialog.NewFileOpen(
 		func(reader fyne.URIReadCloser, err error) {
 			loadInNewWindowDialogTrue(a, reader, err)
@@ -21,7 +21,7 @@ func LoadProfileInNewWindow(a *SpuWindow) {
 	fileOpenDialog.Resize(fyne.NewSize(900, 500))
 	fileOpenDialog.Show()
 }
-func loadInNewWindowDialogTrue(a *SpuWindow, reader fyne.URIReadCloser, err error) {
+func loadInNewWindowDialogTrue(a *ClipWindow, reader fyne.URIReadCloser, err error) {
 	if err != nil {
 		dialog.ShowError(err, a.Window)
 		return
@@ -47,7 +47,7 @@ func loadInNewWindowDialogTrue(a *SpuWindow, reader fyne.URIReadCloser, err erro
 	newWindow.fullrefresh()
 }
 
-func LoadProfile(a *SpuWindow) {
+func LoadProfile(a *ClipWindow) {
 	fileOpenDialog := dialog.NewFileOpen(
 		func(reader fyne.URIReadCloser, err error) {
 			loadDialogTrue(a, reader, err)
@@ -60,7 +60,7 @@ func LoadProfile(a *SpuWindow) {
 	fileOpenDialog.Show()
 }
 
-func loadDialogTrue(a *SpuWindow, reader fyne.URIReadCloser, err error) {
+func loadDialogTrue(a *ClipWindow, reader fyne.URIReadCloser, err error) {
 	if err != nil {
 		dialog.ShowError(err, a.Window)
 		return
@@ -84,7 +84,7 @@ func loadDialogTrue(a *SpuWindow, reader fyne.URIReadCloser, err error) {
 	a.fullrefresh()
 }
 
-func readJson(a *SpuWindow, path string) error {
+func readJson(a *ClipWindow, path string) error {
 	file, err := os.Open(path)
 	if err != nil {
 		return err
