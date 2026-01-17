@@ -1,6 +1,7 @@
 package core
 
 import (
+	"clip/modules"
 	"clip/utility"
 	"context"
 	"fmt"
@@ -12,47 +13,49 @@ import (
 type Scenario struct {
 	Main          string
 	ThreadNumber  int
-	ModulesStruct []*Module
+	ModulesStruct [][]*modules.Module
 }
 
-func NewScenario(main string, thread int, module []*Module) *Scenario {
+func NewScenario(main string, thread int, module [][]*modules.Module) *Scenario {
 	return &Scenario{Main: main, ThreadNumber: thread, ModulesStruct: module}
 }
 
-func (s *Scenario) BeginScenario(ctx context.Context, outputter func(string, *Module)) {
+func (s *Scenario) BeginScenario(ctx context.Context, outputter func(string, *modules.Module)) {
 	s.execute(ctx, outputter)
 }
 
-func (s *Scenario) execute(ctx context.Context, outputter func(string, *Module)) {
+func (s *Scenario) execute(ctx context.Context, outputter func(string, *modules.Module)) {
 	var wg sync.WaitGroup
 
 	stopper := make(chan struct{}, s.ThreadNumber)
 	defer close(stopper)
 
-	for _, m := range s.ModulesStruct {
-		wg.Add(1)
-		go func(m *Module) {
-			m.output = ""
-			localOutputter := func(s string) {
-				go outputter(s, m)
-			}
-			stopper <- struct{}{}
-			defer func() { <-stopper }()
-			defer wg.Done()
+	for i := range s.ModulesStruct {
+		for _, m := range s.ModulesStruct[i] {
+			wg.Add(1)
+			go func(m *modules.Module) {
+				m.Output = ""
+				localOutputter := func(s string) {
+					go outputter(s, m)
+				}
+				stopper <- struct{}{}
+				defer func() { <-stopper }()
+				defer wg.Done()
 
-			if utility.IsCanceled(ctx) {
-				localOutputter("Canceled\n")
-				return
-			}
-			execution := NewRuntime()
-			e := execution.Execute(s.Main+"\n"+m.Content, ctx, localOutputter)
-			if e != nil {
-				localOutputter(fmt.Sprintf("Module '%s' error: %s\n", m.Name, e.Error()))
-				return
-			}
+				if utility.IsCanceled(ctx) {
+					localOutputter("Canceled\n")
+					return
+				}
+				execution := NewRuntime()
+				e := execution.Execute(s.Main+"\n"+m.Content, ctx, localOutputter)
+				if e != nil {
+					localOutputter(fmt.Sprintf("Module '%s' error: %s\n", m.Name, e.Error()))
+					return
+				}
 
-		}(m)
+			}(m)
+		}
+		wg.Wait()
 	}
 
-	wg.Wait()
 }

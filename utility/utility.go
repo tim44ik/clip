@@ -1,6 +1,9 @@
 package utility
 
 import (
+	"clip/modules"
+	"slices"
+
 	"bytes"
 	"context"
 	"fmt"
@@ -95,4 +98,53 @@ func EnumLines(output string) []string {
 		divided[i] = strconv.Itoa(i+1) + "  " + divided[i]
 	}
 	return divided
+}
+
+func GetQueue(m []*modules.Module) ([][]*modules.Module, error) {
+	queueMap := make(map[int][]*modules.Module, 0)
+	cases := make([]int, 0, 2)
+	for i := range m {
+		trimmedSpaces := strings.TrimSpace(m[i].Content)
+		nextLine := strings.IndexFunc(trimmedSpaces, func(r rune) bool { return r == '\n' })
+		if !strings.Contains(strings.ToLower(m[i].Content[:nextLine]), "queue") {
+			return nil, fmt.Errorf("Queue is not declarated in module %s", m[i].Name)
+		}
+		j := 0
+		for j < nextLine {
+			step := string(trimmedSpaces[j])
+			if step != ")" && step != "(" {
+				j++
+				continue
+			}
+			if step == "(" && len(cases) == 0 {
+				cases[0] = j
+			} else if step == ")" && len(cases) == 1 {
+				cases[1] = j
+			} else {
+				return nil, fmt.Errorf("Queue is not declarated in module %s", m[i].Name)
+			}
+			j++
+		}
+		qNum, err := strconv.Atoi(trimmedSpaces[cases[0]:cases[1]])
+		if err != nil {
+			return nil, fmt.Errorf("Queue is not declarated in module %s", m[i].Name)
+		}
+		queueMap[qNum] = m
+	}
+
+	enumed := getSlice(queueMap)
+
+	return enumed, nil
+}
+
+func getSlice(q map[int][]*modules.Module) (enumSlice [][]*modules.Module) {
+	qSlice := []int{}
+	for key := range q {
+		qSlice = append(qSlice, key)
+	}
+	slices.Sort(qSlice)
+	for _, k := range qSlice {
+		enumSlice = append(enumSlice, q[k])
+	}
+	return enumSlice
 }

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"clip/modules"
 	"clip/utility"
 	"context"
 	_ "embed"
@@ -21,7 +22,7 @@ import (
 type ClipWindow struct {
 	Window fyne.Window
 
-	selectedModule *Module
+	selectedModule *modules.Module
 
 	currentScenario *Scenario
 
@@ -49,9 +50,9 @@ type ClipWindow struct {
 	}
 
 	Modules struct {
-		CurrentLang  string    `json:"currentLang"`
-		MainModule   *Module   `json:"mainModule"`
-		ChildModules []*Module `json:"childModules"`
+		CurrentLang  string            `json:"currentLang"`
+		MainModule   *modules.Module   `json:"mainModule"`
+		ChildModules []*modules.Module `json:"childModules"`
 	}
 
 	profiles struct {
@@ -68,7 +69,7 @@ func CreateWindow() (a *ClipWindow) {
 		a.Modules.CurrentLang = "en"
 	}
 
-	a.Modules.MainModule = &Module{Name: a.langmap[a.Modules.CurrentLang][0]}
+	a.Modules.MainModule = &modules.Module{Name: a.langmap[a.Modules.CurrentLang][0]}
 
 	a.profiles.exists = false
 	a.buildWindow(fyne.CurrentApp())
@@ -157,7 +158,7 @@ func (a *ClipWindow) buildWindow(app fyne.App) {
 	a.elms.activity.Hide()
 }
 
-func (a *ClipWindow) selectModule(m *Module) {
+func (a *ClipWindow) selectModule(m *modules.Module) {
 	a.selectedModule = m
 	a.elms.title.Text = fmt.Sprintf("%s '%s'", a.langmap[a.Modules.CurrentLang][15], func(s string) string {
 		if !strings.Contains(s, "\n") && len(s) < 30 {
@@ -208,11 +209,11 @@ func (a *ClipWindow) selectModule(m *Module) {
 	a.elms.fullOutputContainer.Hidden = m == a.Modules.MainModule
 	a.elms.moduleOutputEntry.Hidden = m == a.Modules.MainModule
 	a.elms.bottomPanelButtons.Hidden = m == a.Modules.MainModule
-	divided := strings.Split(a.selectedModule.output, "\n")
+	divided := strings.Split(a.selectedModule.Output, "\n")
 	if len(divided) > 14 {
 		a.elms.moduleOutputEntry.SetText(strings.Join(divided[len(divided)-15:], "\n"))
 	} else {
-		a.elms.moduleOutputEntry.SetText(a.selectedModule.output)
+		a.elms.moduleOutputEntry.SetText(a.selectedModule.Output)
 	}
 	a.elms.moduleOutputEntry.CursorRow = strings.LastIndexAny(a.elms.moduleOutputEntry.Text, "\n")
 	a.elms.bottomPanelCheckboxes.Refresh()
@@ -248,7 +249,13 @@ func (a *ClipWindow) beginScenario() {
 		}
 	}
 
-	scenario := NewScenario(a.Modules.MainModule.Content, t, a.Modules.ChildModules)
+	queue, err := utility.GetQueue(a.Modules.ChildModules)
+	if err != nil {
+		dialog.ShowInformation(fmt.Sprintf("%s", err.Error()), "", a.Window)
+		return
+	}
+
+	scenario := NewScenario(a.Modules.MainModule.Content, t, queue)
 	a.currentScenario = scenario
 	a.elms.moduleOutputEntry.Text = ""
 	a.elms.moduleOutputEntry.Refresh()
@@ -256,7 +263,8 @@ func (a *ClipWindow) beginScenario() {
 	go func() {
 		a.elms.activity.Show()
 		a.elms.activity.Start()
-		scenario.BeginScenario(ctx, func(s string, m *Module) {
+
+		scenario.BeginScenario(ctx, func(s string, m *modules.Module) {
 			fyne.DoAndWait(func() { a.addModuleOutput(m, s) })
 		})
 
@@ -270,7 +278,6 @@ func (a *ClipWindow) beginScenario() {
 
 		}
 	}()
-
 }
 
 func (a *ClipWindow) interruptScenario() {
@@ -298,25 +305,25 @@ func (a *ClipWindow) refreshModuleGui() {
 	}
 	a.elms.modulesPanel.Refresh()
 	a.elms.moduleContentEntry.SetText(a.selectedModule.Content)
-	divided := strings.Split(a.selectedModule.output, "\n")
+	divided := strings.Split(a.selectedModule.Output, "\n")
 	if len(divided) > 14 {
 		a.elms.moduleOutputEntry.SetText(strings.Join(divided[len(divided)-15:], "\n"))
 	} else {
-		a.elms.moduleOutputEntry.SetText(a.selectedModule.output)
+		a.elms.moduleOutputEntry.SetText(a.selectedModule.Output)
 	}
 
 }
 
-func (a *ClipWindow) addModuleOutput(module *Module, line string) {
-	module.output += line
+func (a *ClipWindow) addModuleOutput(module *modules.Module, line string) {
+	module.Output += line
 	if module == a.selectedModule {
 		a.elms.moduleOutputEntryMutex.Lock()
 		defer a.elms.moduleOutputEntryMutex.Unlock()
-		divided := strings.Split(module.output, "\n")
+		divided := strings.Split(module.Output, "\n")
 		if len(divided) > 14 {
 			a.elms.moduleOutputEntry.SetText(strings.Join(divided[len(divided)-15:], "\n"))
 		} else {
-			a.elms.moduleOutputEntry.SetText(module.output)
+			a.elms.moduleOutputEntry.SetText(module.Output)
 		}
 		a.elms.moduleOutputEntry.CursorRow = strings.LastIndex(a.elms.moduleOutputEntry.Text, "\n")
 		a.elms.moduleOutputEntry.Refresh()
@@ -324,7 +331,7 @@ func (a *ClipWindow) addModuleOutput(module *Module, line string) {
 }
 
 func (a *ClipWindow) filterPDF(ctx context.Context) bool {
-	makePDFFor := []*Module{}
+	makePDFFor := []*modules.Module{}
 	for _, m := range a.Modules.ChildModules {
 		if m.MakePDF.Do {
 			makePDFFor = append(makePDFFor, m)

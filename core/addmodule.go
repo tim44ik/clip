@@ -1,6 +1,8 @@
 package core
 
 import (
+	"clip/modules"
+
 	"image/color"
 	"strings"
 
@@ -36,10 +38,10 @@ func addDialog(a *ClipWindow, input *widget.Entry, b bool) {
 		if input.Text == "" {
 			return
 		}
-		m := &Module{
+		m := &modules.Module{
 			Name:    input.Text,
 			Content: "",
-			output:  "",
+			Output:  "",
 		}
 		a.Modules.ChildModules = append(a.Modules.ChildModules, m)
 		a.elms.modulesPanel.Add(CreateModuleButton(a, m))
@@ -51,7 +53,7 @@ func addDialog(a *ClipWindow, input *widget.Entry, b bool) {
 	}
 }
 
-func CreateModuleButton(a *ClipWindow, m *Module) fyne.Widget {
+func CreateModuleButton(a *ClipWindow, m *modules.Module) fyne.Widget {
 	if len(m.Name) > 18 && !strings.Contains(m.Name, "\n") {
 		return widget.NewButton(func(s string) string {
 			if len(s) > 18 {

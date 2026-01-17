@@ -1,6 +1,8 @@
 package core
 
 import (
+	"clip/modules"
+
 	"encoding/json"
 	"os"
 
@@ -99,7 +101,7 @@ func readJson(a *ClipWindow, path string) error {
 
 	a.Modules = mods
 	if a.Modules.MainModule == nil {
-		a.Modules.MainModule = &Module{Name: a.langmap[a.Modules.CurrentLang][1]}
+		a.Modules.MainModule = &modules.Module{Name: a.langmap[a.Modules.CurrentLang][1]}
 	}
 	a.selectModule(a.Modules.MainModule)
 	return nil

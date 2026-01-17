@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
@@ -104,9 +103,9 @@ func (r *Runtime) Execute(code string, ctx context.Context, outputter func(strin
 			}
 			return s
 		})
-		if strings.HasPrefix(line, "@") {
-			basePath, _ := os.Executable()
-			writeStdIn(filepath.Dir(basePath) + "/proxyprogram " + line[1:] + "\n")
+		if strings.HasPrefix(line, "-run-isolated") {
+			filename, _ := os.Executable()
+			writeStdIn(filename + " " + line + "\n")
 		} else {
 			writeStdIn(line + "\n")
 		}

@@ -1,9 +1,9 @@
-package core
+package modules
 
 type Module struct {
 	Name    string `json:"name"`
 	Content string `json:"content"`
-	output  string
+	Output  string `json:"-"`
 	MakePDF struct {
 		Do      bool `json:"do"`
 		Process bool `json:"process"`

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"clip/modules"
 	"clip/utility"
 	"context"
 	_ "embed"
@@ -38,7 +39,7 @@ type CVEInfo struct {
 	Links       []string
 }
 
-func PDFcreationWindow(a *ClipWindow, makePDFFor []*Module, ctx context.Context) {
+func PDFcreationWindow(a *ClipWindow, makePDFFor []*modules.Module, ctx context.Context) {
 	filesaveDialog := dialog.NewFileSave(
 		func(writer fyne.URIWriteCloser, err error) {
 			go makePDFFile(a, makePDFFor, writer, err, ctx)
@@ -48,7 +49,7 @@ func PDFcreationWindow(a *ClipWindow, makePDFFor []*Module, ctx context.Context)
 	fyne.Do(func() { filesaveDialog.Show() })
 }
 
-func makePDFFile(a *ClipWindow, makePDFFor []*Module, writer fyne.URIWriteCloser, err error, ctx context.Context) {
+func makePDFFile(a *ClipWindow, makePDFFor []*modules.Module, writer fyne.URIWriteCloser, err error, ctx context.Context) {
 	if err != nil || writer == nil {
 		return
 	}
@@ -73,7 +74,7 @@ var tnrFont []byte
 //go:embed TimesNewRomanB.ttf
 var tnrbFont []byte
 
-func PDF(a *ClipWindow, makePDFFor []*Module, ctx context.Context, path string) {
+func PDF(a *ClipWindow, makePDFFor []*modules.Module, ctx context.Context, path string) {
 	progressBar := widget.NewProgressBar()
 	progressWindow := dialog.NewCustomWithoutButtons("Creating PDF", progressBar, a.Window)
 	fyne.Do(func() { progressWindow.Show() })
@@ -93,10 +94,10 @@ func PDF(a *ClipWindow, makePDFFor []*Module, ctx context.Context, path string) 
 			pdf.SetFontSize(14)
 			pdf.SetFontStyle("")
 			if m.MakePDF.Process {
-				processedString := processOutput(ctx, m.output)
+				processedString := processOutput(ctx, m.Output)
 				pdf.MultiCell(0, 10, processedString, "0", "L", false)
 			} else {
-				enumed := utility.EnumLines(m.output)
+				enumed := utility.EnumLines(m.Output)
 				pdf.MultiCell(0, 10, strings.Join(enumed, "\n"), "0", "L", false)
 			}
 			fyne.DoAndWait(func() {

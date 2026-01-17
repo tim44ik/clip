@@ -1,6 +1,8 @@
 package core
 
 import (
+	"clip/modules"
+
 	"fmt"
 	"image/color"
 	"slices"
@@ -40,10 +42,10 @@ func alterdialog(a *ClipWindow, input *widget.Entry, b bool) {
 		if input.Text == "" {
 			return
 		}
-		m := &Module{
+		m := &modules.Module{
 			Name:    strings.TrimSpace(input.Text),
 			Content: a.selectedModule.Content,
-			output:  a.selectedModule.output,
+			Output:  a.selectedModule.Output,
 		}
 		a.Modules.ChildModules[slices.Index(a.Modules.ChildModules, a.selectedModule)] = m
 		a.selectedModule = m
