@@ -15,7 +15,10 @@ func main() {
 		cmd := exec.Command(args[2], args[3:]...)
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-		cmd.Run()
+		if err := cmd.Run(); err != nil {
+			println(err.Error())
+			return
+		}
 		return
 	}
 

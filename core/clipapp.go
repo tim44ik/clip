@@ -249,9 +249,9 @@ func (a *ClipWindow) beginScenario() {
 		}
 	}
 
-	queue, err := utility.GetQueue(a.Modules.ChildModules)
+	queue, err := utility.GetQueue(a.langmap[a.Modules.CurrentLang], a.Modules.ChildModules)
 	if err != nil {
-		dialog.ShowInformation(fmt.Sprintf("%s", err.Error()), "", a.Window)
+		dialog.ShowError(err, a.Window)
 		return
 	}
 

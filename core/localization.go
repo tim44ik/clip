@@ -22,7 +22,9 @@ func LangmapInit(a *ClipWindow) {
 			"Error occured while making PDF",
 			"Change language", "Apply",
 			"Choose language", "View full output", "Full output",
-			"Process output", "Creating PDF"}
+			"Process output", "Creating PDF",
+			"37Queue is not declarated in module",
+			"No commands provided for execution in module"}
 
 	a.langmap["ru"] =
 		[]string{"Главная",
@@ -49,5 +51,7 @@ func LangmapInit(a *ClipWindow) {
 			"Ошибка при создании PDF",
 			"Изменить язык", "Применить",
 			"Выберите язык", "Посмотреть весь вывод", "Весь вывод программы",
-			"Обработать вывод", "Идет формирование PDF-отчета"}
+			"Обработать вывод", "Идет формирование PDF-отчета",
+			"Номер очереди не задан в модуле",
+			"Не заданы команды для исполнения в модуле"}
 }

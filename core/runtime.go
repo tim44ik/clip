@@ -82,7 +82,7 @@ func (r *Runtime) Execute(code string, ctx context.Context, outputter func(strin
 	for line := range strings.SplitSeq(code, "\n") {
 		if utility.IsCanceled(ctx) {
 			writeStdIn("exit\n")
-			return fmt.Errorf("Отменено")
+			return fmt.Errorf("Canceled")
 		}
 
 		line = strings.Trim(line, " \t\r")
@@ -102,7 +102,8 @@ func (r *Runtime) Execute(code string, ctx context.Context, outputter func(strin
 				return val
 			}
 			return s
-		})
+		},
+		)
 		if strings.HasPrefix(line, "-run-isolated") {
 			filename, _ := os.Executable()
 			writeStdIn(filename + " " + line + "\n")

@@ -5,6 +5,7 @@ import (
 	"clip/utility"
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	_ "embed"
@@ -47,7 +48,8 @@ func (s *Scenario) execute(ctx context.Context, outputter func(string, *modules.
 					return
 				}
 				execution := NewRuntime()
-				e := execution.Execute(s.Main+"\n"+m.Content, ctx, localOutputter)
+				startFrom := strings.IndexFunc(m.Content, func(r rune) bool { return r == '\n' })
+				e := execution.Execute(s.Main+"\n"+m.Content[startFrom+1:], ctx, localOutputter)
 				if e != nil {
 					localOutputter(fmt.Sprintf("Module '%s' error: %s\n", m.Name, e.Error()))
 					return
