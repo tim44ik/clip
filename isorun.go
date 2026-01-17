@@ -6,7 +6,7 @@ import (
 )
 
 func runIso(args []string) {
-	cmd := exec.Command("cmd.exe", args[2:]...)
+	cmd := exec.Command(args[2], args[3:]...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
