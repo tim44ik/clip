@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
@@ -14,7 +13,6 @@ import (
 
 type Runtime struct {
 	Variables map[string]string
-	Directory string
 }
 
 func NewRuntime() *Runtime {
@@ -30,12 +28,14 @@ func (r *Runtime) Execute(code string, ctx context.Context, outputter func(strin
 	}
 	defer stdOutR.Close()
 	defer stdOutW.Close()
+
 	stdErrR, stdErrW, e := os.Pipe()
 	if e != nil {
 		return e
 	}
 	defer stdErrR.Close()
 	defer stdErrW.Close()
+
 	stdInR, stdInW, e := os.Pipe()
 	if e != nil {
 		return e
@@ -53,6 +53,7 @@ func (r *Runtime) Execute(code string, ctx context.Context, outputter func(strin
 	} else {
 		path = "/bin/bash"
 	}
+
 	proc, e := os.StartProcess(path, nil, &os.ProcAttr{
 		Files: []*os.File{stdInR, stdOutW, stdErrW}})
 	if e != nil {
@@ -61,6 +62,7 @@ func (r *Runtime) Execute(code string, ctx context.Context, outputter func(strin
 
 	ctx, ctxCancel := context.WithCancel(ctx)
 	defer ctxCancel()
+
 	stdOutCh, stdOutCancel := utility.WrapReaderToChannel(stdOutR)
 	stdErrCh, stdErrCancel := utility.WrapReaderToChannel(stdErrR)
 	defer stdOutCancel()
@@ -70,16 +72,12 @@ func (r *Runtime) Execute(code string, ctx context.Context, outputter func(strin
 		for {
 			select {
 			case <-ctx.Done():
-				outputter("\nModule finished")
+				outputter("Module finished")
 				return
 			case str := <-stdOutCh:
-				if strings.Contains(str, "\n") {
-					outputter(str)
-				}
+				outputter(str)
 			case str := <-stdErrCh:
-				if strings.Contains(str, "\n") {
-					outputter(str)
-				}
+				outputter(str)
 			}
 		}
 	}()
@@ -87,7 +85,7 @@ func (r *Runtime) Execute(code string, ctx context.Context, outputter func(strin
 	for line := range strings.SplitSeq(code, "\n") {
 		if utility.IsCanceled(ctx) {
 			writeStdIn("exit\n")
-			return fmt.Errorf("Отменено")
+			return fmt.Errorf("Canceled")
 		}
 
 		line = strings.Trim(line, " \t\r")
@@ -107,21 +105,27 @@ func (r *Runtime) Execute(code string, ctx context.Context, outputter func(strin
 				return val
 			}
 			return s
-		})
-		if strings.HasPrefix(line, "@") {
-			basePath, _ := os.Executable()
-			writeStdIn(filepath.Dir(basePath) + "/proxyprogram " + line[1:] + "\n")
+		},
+		)
+
+		if strings.HasPrefix(line, "-run-isolated") {
+			filename, _ := os.Executable()
+			writeStdIn(filename + " " + line + "\n")
 		} else {
 			writeStdIn(line + "\n")
 		}
 	}
+
 	writeStdIn("exit\n")
+
 	waitCh := make(chan struct{}, 1)
 	defer close(waitCh)
+
 	go func() {
 		proc.Wait()
 		waitCh <- struct{}{}
 	}()
+
 	select {
 	case <-waitCh:
 		return nil
