@@ -13,7 +13,6 @@ func main() {
 		runIso(os.Args)
 		return
 	}
-
 	app.NewWithID("123")
 	fyne.CurrentApp().Settings().SetTheme(core.BlackTextTheme{})
 	core.CreateWindow().Window.ShowAndRun()
