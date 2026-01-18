@@ -21,9 +21,15 @@ func ChangeLanguageWindow(a *ClipWindow) {
 		return slice
 	}(a.langmap)
 	dropoutMenu := widget.NewSelectEntry(options)
-	langwindow := dialog.NewCustomConfirm(a.langmap[a.Modules.CurrentLang][29], a.langmap[a.Modules.CurrentLang][30], a.langmap[a.Modules.CurrentLang][24],
+	langwindow := dialog.NewCustomConfirm(
+		a.langmap[a.Modules.CurrentLang][29],
+		a.langmap[a.Modules.CurrentLang][30],
+		a.langmap[a.Modules.CurrentLang][24],
 		container.NewBorder(
-			container.NewVBox(canvas.NewText(a.langmap[a.Modules.CurrentLang][31], color.Black), dropoutMenu),
+			container.NewVBox(canvas.NewText(
+				a.langmap[a.Modules.CurrentLang][31],
+				color.Black),
+				dropoutMenu),
 			nil, nil, nil,
 		),
 		func(b bool) {

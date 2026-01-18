@@ -19,7 +19,9 @@ func LoadProfileInNewWindow(a *ClipWindow) {
 		a.Window,
 	)
 
-	fileOpenDialog.SetFilter(storage.NewExtensionFileFilter([]string{".json"}))
+	fileOpenDialog.SetFilter(
+		storage.NewExtensionFileFilter([]string{".json"}),
+	)
 	fileOpenDialog.Resize(fyne.NewSize(900, 500))
 	fileOpenDialog.Show()
 }
@@ -45,6 +47,7 @@ func loadInNewWindowDialogTrue(a *ClipWindow, reader fyne.URIReadCloser, err err
 	newWindow.profiles.exists = true
 	newWindow.profiles.path = filename
 	newWindow.Window.Show()
+
 	newWindow.refreshModuleGui()
 	newWindow.fullrefresh()
 }
@@ -82,6 +85,7 @@ func loadDialogTrue(a *ClipWindow, reader fyne.URIReadCloser, err error) {
 
 	a.profiles.exists = true
 	a.profiles.path = filename
+
 	a.refreshModuleGui()
 	a.fullrefresh()
 }
@@ -101,7 +105,9 @@ func readJson(a *ClipWindow, path string) error {
 
 	a.Modules = mods
 	if a.Modules.MainModule == nil {
-		a.Modules.MainModule = &modules.Module{Name: a.langmap[a.Modules.CurrentLang][1]}
+		a.Modules.MainModule = &modules.Module{
+			Name: a.langmap[a.Modules.CurrentLang][1],
+		}
 	}
 	a.selectModule(a.Modules.MainModule)
 	return nil

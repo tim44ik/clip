@@ -3,7 +3,6 @@ package core
 import (
 	"clip/modules"
 
-	"fmt"
 	"image/color"
 	"slices"
 	"strings"
@@ -15,7 +14,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-func Alter(a *ClipWindow) {
+func EditModuleName(a *ClipWindow) {
 	a.applyModuleChanges()
 	input := widget.NewMultiLineEntry()
 	input.SetText(a.selectedModule.Name)
@@ -31,13 +30,13 @@ func Alter(a *ClipWindow) {
 				nil, nil, nil, scroll,
 			),
 		), func(b bool) {
-			alterdialog(a, input, b)
+			editdialog(a, input, b)
 		}, a.Window)
 	addmoduleDialog.Resize(fyne.NewSize(500, 300))
 	addmoduleDialog.Show()
 }
 
-func alterdialog(a *ClipWindow, input *widget.Entry, b bool) {
+func editdialog(a *ClipWindow, input *widget.Entry, b bool) {
 	if b {
 		if input.Text == "" {
 			return
@@ -48,9 +47,7 @@ func alterdialog(a *ClipWindow, input *widget.Entry, b bool) {
 			Output:  a.selectedModule.Output,
 		}
 		a.Modules.ChildModules[slices.Index(a.Modules.ChildModules, a.selectedModule)] = m
-		a.selectedModule = m
-		a.elms.title.Text = fmt.Sprintf("%s '%s'", a.langmap[a.Modules.CurrentLang][15], m.Name)
-		a.elms.title.Refresh()
+		a.selectModule(m)
 		a.refreshModuleGui()
 	} else {
 		return

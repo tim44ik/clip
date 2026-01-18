@@ -13,6 +13,7 @@ import (
 
 func SaveProfile(a *ClipWindow) {
 	a.applyModuleChanges()
+
 	switch a.profiles.exists {
 	case true:
 		makeJson(a, a.profiles.path)
@@ -29,9 +30,11 @@ func SaveProfileAs(a *ClipWindow) {
 			if err != nil {
 				return
 			}
+
 			if writer == nil {
 				return
 			}
+
 			path := writer.URI().Path()
 			writer.Close()
 
@@ -47,8 +50,11 @@ func SaveProfileAs(a *ClipWindow) {
 			}
 
 		}, a.Window)
+
 	filesavedialog.SetFilter(storage.NewExtensionFileFilter([]string{".json"}))
+
 	filesavedialog.Resize(fyne.NewSize(900, 500))
+
 	filesavedialog.Show()
 }
 
@@ -56,6 +62,7 @@ func makeJson(a *ClipWindow, filename string) error {
 	filename = strings.TrimSuffix(filename, filepath.Ext(filename))
 	filename += ".json"
 	a.profiles.path = filename
+
 	file, err := os.Create(filename)
 	if err != nil {
 		return err

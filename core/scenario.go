@@ -34,11 +34,14 @@ func (s *Scenario) execute(ctx context.Context, outputter func(string, *modules.
 	for i := range s.ModulesStruct {
 		for _, m := range s.ModulesStruct[i] {
 			wg.Add(1)
+
 			go func(m *modules.Module) {
 				m.Output = ""
+
 				localOutputter := func(s string) {
 					go outputter(s, m)
 				}
+
 				stopper <- struct{}{}
 				defer func() { <-stopper }()
 				defer wg.Done()
@@ -47,9 +50,15 @@ func (s *Scenario) execute(ctx context.Context, outputter func(string, *modules.
 					localOutputter("Canceled\n")
 					return
 				}
+
 				execution := NewRuntime()
-				startFrom := strings.IndexFunc(m.Content, func(r rune) bool { return r == '\n' })
-				e := execution.Execute(s.Main+"\n"+m.Content[startFrom+1:], ctx, localOutputter)
+
+				startFrom := strings.IndexFunc(m.Content,
+					func(r rune) bool { return r == '\n' })
+
+				e := execution.Execute(s.Main+"\n"+m.Content[startFrom+1:],
+					ctx,
+					localOutputter)
 				if e != nil {
 					localOutputter(fmt.Sprintf("Module '%s' error: %s\n", m.Name, e.Error()))
 					return
@@ -57,6 +66,7 @@ func (s *Scenario) execute(ctx context.Context, outputter func(string, *modules.
 
 			}(m)
 		}
+
 		wg.Wait()
 	}
 

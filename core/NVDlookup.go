@@ -99,6 +99,7 @@ func (n *NVDClient) FetchCPEName(prod string, ctx context.Context) ([]string, er
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return nil, err
 	}
+
 	if parsed.TotalResults == 0 {
 		return nil, fmt.Errorf("no CPE was found")
 	}
@@ -134,6 +135,7 @@ func (n *NVDClient) Fetch(link, subject string, ctx context.Context) ([]*CVEInfo
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("NVD: %s", string(body))
 	}
+
 	var parsed NVDResponse
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return nil, err
@@ -141,11 +143,13 @@ func (n *NVDClient) Fetch(link, subject string, ctx context.Context) ([]*CVEInfo
 	if parsed.TotalResults == 0 {
 		return nil, fmt.Errorf("no CVE was found")
 	}
-	infoSlice := []*CVEInfo{}
 
+	infoSlice := []*CVEInfo{}
 	for _, vulnerability := range parsed.Vulnerabilities {
+
 		info := &CVEInfo{}
 		info.ID = vulnerability.CVE.ID
+
 		if vulnerability.CVE.Metrics.CvssMetricV2 != nil {
 			info.SeverityV2 = vulnerability.CVE.Metrics.CvssMetricV2[0].BaseSeverity
 		}
@@ -158,6 +162,7 @@ func (n *NVDClient) Fetch(link, subject string, ctx context.Context) ([]*CVEInfo
 		if vulnerability.CVE.Metrics.CvssMetricV40 != nil {
 			info.SeverityV40 = vulnerability.CVE.Metrics.CvssMetricV40[0].CvssData.BaseSeverity
 		}
+
 		for _, r := range vulnerability.CVE.References {
 			if !slices.Contains(info.Links, r.Url) {
 				if r.Tags != nil {
@@ -172,12 +177,15 @@ func (n *NVDClient) Fetch(link, subject string, ctx context.Context) ([]*CVEInfo
 				break
 			}
 		}
+
 		for _, r := range vulnerability.CVE.Descriptions {
 			if r.Language == "en" {
 				info.Description = r.Value
 			}
 		}
+
 		infoSlice = append(infoSlice, info)
 	}
+
 	return infoSlice, nil
 }

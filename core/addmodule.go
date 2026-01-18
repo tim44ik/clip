@@ -23,7 +23,10 @@ func AddModule(a *ClipWindow) {
 		a.langmap[a.Modules.CurrentLang][24],
 		container.NewPadded(
 			container.NewBorder(
-				canvas.NewText(a.langmap[a.Modules.CurrentLang][25], color.Black),
+				canvas.NewText(
+					a.langmap[a.Modules.CurrentLang][25],
+					color.Black,
+				),
 				nil, nil, nil, scroll,
 			),
 		), func(b bool) {
@@ -56,6 +59,7 @@ func addDialog(a *ClipWindow, input *widget.Entry, b bool) {
 func CreateModuleButton(a *ClipWindow, m *modules.Module) fyne.Widget {
 	if len(m.Name) > 18 && !strings.Contains(m.Name, "\n") {
 		return widget.NewButton(func(s string) string {
+			s = strings.TrimSpace(s)
 			if len(s) > 18 {
 				f := 0
 				for i := range s {
@@ -71,7 +75,7 @@ func CreateModuleButton(a *ClipWindow, m *modules.Module) fyne.Widget {
 					}
 				}
 			}
-			return strings.TrimSpace(s)
+			return s
 		}(m.Name), func() { a.selectModule(m) })
 	}
 	return widget.NewButton(strings.TrimSpace(m.Name),
