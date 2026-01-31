@@ -23,7 +23,7 @@ func LangmapInit(a *ClipWindow) {
 			"Change language", "Apply",
 			"Choose language", "View full output", "Full output",
 			"Process output", "Creating PDF",
-			"37Queue is not declarated in module",
+			"Queue is not declarated in module",
 			"No commands provided for execution in module"}
 
 	a.langmap["ru"] =

@@ -125,6 +125,9 @@ func GetQueue(langmap []string, m []*modules.Module) ([][]*modules.Module, error
 		cases := make([]int, 0, 2)
 
 		for j < nextLine {
+			if len(cases) == 2 {
+				break
+			}
 			step := string(trimmedSpaces[j])
 			if step != ")" && step != "(" {
 				j++
@@ -140,7 +143,7 @@ func GetQueue(langmap []string, m []*modules.Module) ([][]*modules.Module, error
 
 			j++
 		}
-		if len(cases) != 2 {
+		if len(cases) != 2 || j != nextLine-1 {
 			return nil, fmt.Errorf("%s %s", langmap[37], m[i].Name)
 		}
 
