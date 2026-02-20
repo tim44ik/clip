@@ -1,6 +1,7 @@
 package core
 
 import (
+	"clip/errors"
 	"clip/modules"
 	"clip/utility"
 	"context"
@@ -22,22 +23,16 @@ import (
 type ClipWindow struct {
 	Window fyne.Window
 
-	selectedModule *modules.Module
-
-	currentScenario *Scenario
-
-	langmap map[string][]string
-
 	cancel context.CancelFunc
 
 	elms struct {
+		moduleOutputEntryMutex sync.Mutex
 		title                  *canvas.Text
 		threadEntry            *widget.Entry
 		moduleContentEntry     *widget.Entry
 		moduleOutputEntry      *widget.Entry
 		createPDFCheck         *widget.Check
 		processOutputCheck     *widget.Check
-		moduleOutputEntryMutex sync.Mutex
 		modulesPanel           *fyne.Container
 		fullOutputContainer    *fyne.Container
 		threadEntryBox         *fyne.Container
@@ -49,15 +44,21 @@ type ClipWindow struct {
 		bottomPanelButtons     *fyne.Container
 	}
 
-	Modules struct {
-		CurrentLang  string            `json:"currentLang"`
-		MainModule   *modules.Module   `json:"mainModule"`
-		ChildModules []*modules.Module `json:"childModules"`
-	}
+	currentScenario *Scenario
+
+	selectedModule *modules.Module
+
+	langmap map[string][]string
 
 	profiles struct {
 		exists bool
 		path   string
+	}
+
+	Modules struct {
+		MainModule   *modules.Module   `json:"mainModule"`
+		ChildModules []*modules.Module `json:"childModules"`
+		CurrentLang  string            `json:"currentLang"`
 	}
 }
 
@@ -227,13 +228,56 @@ func (a *ClipWindow) applyModuleChanges() {
 	a.selectedModule.Content = a.elms.moduleContentEntry.Text
 }
 
-func (a *ClipWindow) beginScenario() {
+func (a *ClipWindow) initCheck() bool {
 	if len(a.Modules.ChildModules) == 0 {
-		return
+		return true
 	}
 
 	if a.currentScenario != nil {
 		dialog.ShowError(fmt.Errorf("%s", a.langmap[a.Modules.CurrentLang][16]), a.Window)
+		return true
+	}
+	return false
+}
+
+func (a *ClipWindow) getThreads() (t int, err error) {
+	if a.elms.threadEntry.Text == "" {
+		t = 1
+	} else {
+		t, err = strconv.Atoi(a.elms.threadEntry.Text)
+		if err != nil {
+			return 0, errors.UniversalError{ErrorText: a.langmap[a.Modules.CurrentLang][39], Module: a.langmap[a.Modules.CurrentLang][2]}
+		}
+	}
+	return t, nil
+}
+
+func (a *ClipWindow) runner(scenario *Scenario, ctx context.Context) {
+	a.elms.activity.Show()
+	a.elms.activity.Start()
+
+	scenario.BeginScenario(ctx,
+		func(s string, m *modules.Module) {
+			fyne.DoAndWait(func() { a.addModuleOutput(m, s) })
+		})
+
+	if a.currentScenario == scenario {
+		fyne.DoAndWait(func() { a.elms.activity.Hide(); a.elms.activity.Stop() })
+		a.currentScenario = nil
+
+		if !a.filterPDF(ctx) {
+			dialog.ShowInformation(
+				a.langmap[a.Modules.CurrentLang][17],
+				a.langmap[a.Modules.CurrentLang][18],
+				a.Window,
+			)
+		}
+
+	}
+}
+
+func (a *ClipWindow) beginScenario() {
+	if a.initCheck() {
 		return
 	}
 
@@ -242,15 +286,10 @@ func (a *ClipWindow) beginScenario() {
 	ctx, cancel := context.WithCancel(context.Background())
 	a.cancel = cancel
 
-	var t int
-	var err error
-	if a.elms.threadEntry.Text == "" {
-		t = 1
-	} else {
-		t, err = strconv.Atoi(a.elms.threadEntry.Text)
-		if err != nil {
-			return
-		}
+	t, err := a.getThreads()
+	if err != nil {
+		dialog.ShowError(err, a.Window)
+		return
 	}
 
 	queue, err := utility.GetQueue(a.langmap[a.Modules.CurrentLang], a.Modules.ChildModules)
@@ -264,29 +303,7 @@ func (a *ClipWindow) beginScenario() {
 	a.elms.moduleOutputEntry.Text = ""
 	a.elms.moduleOutputEntry.Refresh()
 
-	go func() {
-		a.elms.activity.Show()
-		a.elms.activity.Start()
-
-		scenario.BeginScenario(ctx,
-			func(s string, m *modules.Module) {
-				fyne.DoAndWait(func() { a.addModuleOutput(m, s) })
-			})
-
-		if a.currentScenario == scenario {
-			fyne.DoAndWait(func() { a.elms.activity.Hide() })
-			a.currentScenario = nil
-
-			if !a.filterPDF(ctx) {
-				dialog.ShowInformation(
-					a.langmap[a.Modules.CurrentLang][17],
-					a.langmap[a.Modules.CurrentLang][18],
-					a.Window,
-				)
-			}
-
-		}
-	}()
+	go a.runner(scenario, ctx)
 }
 
 func (a *ClipWindow) filterPDF(ctx context.Context) bool {
@@ -305,7 +322,7 @@ func (a *ClipWindow) filterPDF(ctx context.Context) bool {
 
 func (a *ClipWindow) interruptScenario() {
 	if a.currentScenario == nil {
-		dialog.ShowError(fmt.Errorf("%s", a.langmap[a.Modules.CurrentLang][19]), a.Window)
+		dialog.ShowError(errors.UniversalError{ErrorText: a.langmap[a.Modules.CurrentLang][19], Module: ""}, a.Window)
 		return
 	}
 	if a.cancel != nil {

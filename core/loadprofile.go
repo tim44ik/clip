@@ -1,6 +1,7 @@
 package core
 
 import (
+	"clip/errors"
 	"clip/modules"
 
 	"encoding/json"
@@ -14,7 +15,7 @@ import (
 func LoadProfileInNewWindow(a *ClipWindow) {
 	fileOpenDialog := dialog.NewFileOpen(
 		func(reader fyne.URIReadCloser, err error) {
-			loadInNewWindowDialogTrue(a, reader, err)
+			loadInNewWindowDialogTrue(a, reader, errors.UniversalError{ErrorText: a.langmap[a.Modules.CurrentLang][40]})
 		},
 		a.Window,
 	)
@@ -25,6 +26,7 @@ func LoadProfileInNewWindow(a *ClipWindow) {
 	fileOpenDialog.Resize(fyne.NewSize(900, 500))
 	fileOpenDialog.Show()
 }
+
 func loadInNewWindowDialogTrue(a *ClipWindow, reader fyne.URIReadCloser, err error) {
 	if err != nil {
 		dialog.ShowError(err, a.Window)
@@ -93,14 +95,14 @@ func loadDialogTrue(a *ClipWindow, reader fyne.URIReadCloser, err error) {
 func readJson(a *ClipWindow, path string) error {
 	file, err := os.Open(path)
 	if err != nil {
-		return err
+		return errors.UniversalError{ErrorText: a.langmap[a.Modules.CurrentLang][40]}
 	}
 	defer file.Close()
 
 	decoder := json.NewDecoder(file)
 	mods := a.Modules
 	if e := decoder.Decode(&mods); e != nil {
-		return e
+		return errors.UniversalError{ErrorText: a.langmap[a.Modules.CurrentLang][40]}
 	}
 
 	a.Modules = mods

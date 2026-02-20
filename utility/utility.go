@@ -1,6 +1,7 @@
 package utility
 
 import (
+	"clip/errors"
 	"clip/modules"
 	"slices"
 
@@ -114,11 +115,13 @@ func GetQueue(langmap []string, m []*modules.Module) ([][]*modules.Module, error
 		nextLine := strings.IndexFunc(trimmedSpaces, func(r rune) bool { return r == '\n' })
 
 		if nextLine == -1 && !strings.Contains(strings.ToLower(m[i].Content), "queue") {
-			return nil, fmt.Errorf("%s %s", langmap[37], m[i].Name)
-		} else if nextLine != -1 && !strings.Contains(strings.ToLower(m[i].Content[:nextLine]), "queue") {
-			return nil, fmt.Errorf("%s %s", langmap[37], m[i].Name)
-		} else if nextLine == -1 && strings.Contains(strings.ToLower(m[i].Content), "queue") {
-			return nil, fmt.Errorf("%s %s", langmap[38], m[i].Name)
+			return nil, errors.UniversalError{ErrorText: langmap[37], Module: m[i].Name}
+		}
+		if nextLine != -1 && !strings.Contains(strings.ToLower(m[i].Content[:nextLine]), "queue") {
+			return nil, errors.UniversalError{ErrorText: langmap[37], Module: m[i].Name}
+		}
+		if nextLine == -1 && strings.Contains(strings.ToLower(m[i].Content), "queue") {
+			return nil, errors.UniversalError{ErrorText: langmap[38], Module: m[i].Name}
 		}
 
 		j := 0
@@ -144,12 +147,12 @@ func GetQueue(langmap []string, m []*modules.Module) ([][]*modules.Module, error
 			j++
 		}
 		if len(cases) != 2 || j != nextLine-1 {
-			return nil, fmt.Errorf("%s %s", langmap[37], m[i].Name)
+			return nil, errors.UniversalError{ErrorText: langmap[37], Module: m[i].Name}
 		}
 
 		qNum, err := strconv.Atoi(trimmedSpaces[cases[0]+1 : cases[1]])
 		if err != nil {
-			return nil, fmt.Errorf("%s %s", langmap[37], m[i].Name)
+			return nil, errors.UniversalError{ErrorText: langmap[37], Module: m[i].Name}
 		}
 
 		queueMap[qNum] = append(queueMap[qNum], m[i])

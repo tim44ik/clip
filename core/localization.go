@@ -12,7 +12,7 @@ func LangmapInit(a *ClipWindow) {
 			"Begin scenario", "Break scenario",
 			"Break scenario and make PDF",
 			"Change language", "Exit",
-			"Add module", "Module", "Scenario is already started",
+			"Add module", "Module", "Scenario is already running",
 			"Completed", "Scenario execution completed",
 			"Scenario was not started",
 			"Interrupted", "Scenario execution was interrupted",
@@ -24,7 +24,8 @@ func LangmapInit(a *ClipWindow) {
 			"Choose language", "View full output", "Full output",
 			"Process output", "Creating PDF",
 			"Queue is not declarated in module",
-			"No commands provided for execution in module"}
+			"No commands provided for execution in module", "Data format error in ",
+			"40Loading profile error"}
 
 	a.langmap["ru"] =
 		[]string{"Главная",
@@ -53,5 +54,6 @@ func LangmapInit(a *ClipWindow) {
 			"Выберите язык", "Посмотреть весь вывод", "Весь вывод программы",
 			"Обработать вывод", "Идет формирование PDF-отчета",
 			"Номер очереди не задан в модуле",
-			"Не заданы команды для исполнения в модуле"}
+			"Не заданы команды для исполнения в модуле", "Ошибка формата данных в ",
+			"Ошибка загрузки профиля"}
 }
