@@ -162,7 +162,7 @@ func GetQueue(langmap []string, m []*modules.Module) ([][]*modules.Module, error
 }
 
 func getSlice(q map[int][]*modules.Module) (enumSlice [][]*modules.Module) {
-	qSlice := []int{}
+	qSlice := make([]int, 0, len(q))
 
 	for key := range q {
 		qSlice = append(qSlice, key)
