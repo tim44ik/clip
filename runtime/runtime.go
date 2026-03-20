@@ -1,4 +1,4 @@
-package core
+package runtime
 
 import (
 	"clip/utility"
@@ -110,7 +110,7 @@ func (r *Runtime) Execute(code string, ctx context.Context, outputter func(strin
 
 		if strings.HasPrefix(line, "-run-isolated") {
 			filename, _ := os.Executable()
-			writeStdIn(filename + " " + line + "\n")
+			writeStdIn("\"" + filename + "\"" + " " + line + "\n")
 		} else {
 			writeStdIn(line + "\n")
 		}

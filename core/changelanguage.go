@@ -11,7 +11,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-func ChangeLanguageWindow(a *ClipWindow) {
+func (a *ClipWindow) changeLanguageWindow() {
 	a.applyModuleChanges()
 	options := func(langmap map[string][]string) []string {
 		slice := []string{}
@@ -22,20 +22,20 @@ func ChangeLanguageWindow(a *ClipWindow) {
 	}(a.langmap)
 	dropoutMenu := widget.NewSelectEntry(options)
 	langwindow := dialog.NewCustomConfirm(
-		a.langmap[a.Modules.CurrentLang][29],
-		a.langmap[a.Modules.CurrentLang][30],
-		a.langmap[a.Modules.CurrentLang][24],
+		a.langmap[a.modules.CurrentLang][29],
+		a.langmap[a.modules.CurrentLang][30],
+		a.langmap[a.modules.CurrentLang][24],
 		container.NewBorder(
 			container.NewVBox(canvas.NewText(
-				a.langmap[a.Modules.CurrentLang][31],
+				a.langmap[a.modules.CurrentLang][31],
 				color.Black),
 				dropoutMenu),
 			nil, nil, nil,
 		),
 		func(b bool) {
 			if slices.Contains(options, dropoutMenu.Text) {
-				a.Modules.CurrentLang = dropoutMenu.Text
-				a.fullrefresh()
+				a.modules.CurrentLang = dropoutMenu.Text
+				a.fullRefresh()
 			}
 		},
 		a.Window,

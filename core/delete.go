@@ -5,12 +5,12 @@ import (
 	"slices"
 )
 
-func Delete(a *ClipWindow) {
-	if a.selectedModule == a.Modules.MainModule {
+func (a *ClipWindow) deleteModule() {
+	if a.selectedModule == a.modules.MainModule {
 		return
 	}
-	a.Modules.ChildModules = slices.DeleteFunc(
-		a.Modules.ChildModules,
+	a.modules.ChildModules = slices.DeleteFunc(
+		a.modules.ChildModules,
 		func(m *modules.Module) bool {
 			return m == a.selectedModule
 		})

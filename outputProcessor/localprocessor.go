@@ -1,25 +1,13 @@
-package core
+package outputprocessor
 
 import (
-	"clip/modules"
 	"clip/utility"
-	"context"
-	_ "embed"
 	"fmt"
-	"os"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
-	"time"
-
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/storage"
-	"fyne.io/fyne/v2/widget"
-	"github.com/phpdave11/gofpdf"
 )
 
 type Order struct {
@@ -39,95 +27,12 @@ type CVEInfo struct {
 	Links       []string
 }
 
-func PDFcreationWindow(a *ClipWindow, makePDFFor []*modules.Module, ctx context.Context) {
-	filesaveDialog := dialog.NewFileSave(
-		func(writer fyne.URIWriteCloser, err error) {
-			go makePDFFile(a, makePDFFor, writer, err, ctx)
-		}, a.Window)
-	filesaveDialog.SetFilter(storage.NewExtensionFileFilter([]string{".pdf"}))
-	filesaveDialog.Resize(fyne.NewSize(900, 500))
-	fyne.Do(func() { filesaveDialog.Show() })
+type DB interface {
+	Lookup(string) ([]string, error)
+	Fetch(string, string) ([]*CVEInfo, error)
 }
 
-func makePDFFile(a *ClipWindow, makePDFFor []*modules.Module, writer fyne.URIWriteCloser, err error, ctx context.Context) {
-	if err != nil || writer == nil {
-		return
-	}
-
-	path := writer.URI().Path()
-	if filepath.Ext(path) != ".pdf" {
-		defer os.Remove(path)
-	}
-
-	path = strings.TrimSuffix(path, filepath.Ext(path))
-	path += ".pdf"
-
-	if filepath.Base(path) == ".pdf" {
-		path = strings.TrimSuffix(a.profiles.path, ".json") + time.Now().Format(" 02.01.2006 15-04-05") + ".pdf"
-	}
-	PDF(a, makePDFFor, ctx, path)
-}
-
-//go:embed TimesNewRoman.ttf
-var tnrFont []byte
-
-//go:embed TimesNewRomanB.ttf
-var tnrbFont []byte
-
-func PDF(a *ClipWindow, makePDFFor []*modules.Module, ctx context.Context, path string) {
-	progressBar := widget.NewProgressBar()
-	progressWindow := dialog.NewCustomWithoutButtons(
-		"Creating PDF",
-		progressBar,
-		a.Window,
-	)
-	fyne.Do(func() { progressWindow.Show() })
-	go func() {
-		pdf := gofpdf.New("P", "mm", "A4", "")
-		pdf.AddUTF8FontFromBytes("TimesNewRoman", "", tnrFont)
-		pdf.AddUTF8FontFromBytes("TimesNewRoman", "B", tnrbFont)
-		pdf.AddPage()
-		pdf.SetFont("TimesNewRoman", "", 22)
-		pdf.SetTextColor(0, 0, 0)
-
-		length := float64(len(makePDFFor))
-
-		for i, m := range makePDFFor {
-
-			pdf.SetFontSize(22)
-			pdf.SetFontStyle("B")
-			pdf.Cell(0, 10, m.Name)
-			pdf.Ln(15)
-
-			pdf.SetFontSize(14)
-			pdf.SetFontStyle("")
-			if m.MakePDF.Process {
-				processedString := processOutput(ctx, m.Output)
-				pdf.MultiCell(0, 10, processedString, "0", "L", false)
-			} else {
-				enumed := utility.EnumLines(m.Output)
-				pdf.MultiCell(0, 10, strings.Join(enumed, "\n"), "0", "L", false)
-			}
-
-			fyne.DoAndWait(func() {
-				progressBar.SetValue(float64(i+1) / length)
-			})
-
-		}
-
-		e := pdf.OutputFileAndClose(path)
-		if e != nil {
-			dialog.ShowError(fmt.Errorf("%s:\n%s", a.langmap[a.Modules.CurrentLang][28], e), a.Window)
-		}
-
-		fyne.Do(func() { progressWindow.Hide() })
-	}()
-}
-
-func processOutput(ctx context.Context, output string) string {
-
-	client := NewNVDClient(ctx)
-
+func ProcessOutput(db DB, output string) string {
 	outputListed := utility.EnumLines(output)
 
 	softByLine, cvesByLine := FindCVEs(outputListed)
@@ -146,12 +51,11 @@ func processOutput(ctx context.Context, output string) string {
 			defer func() { <-sem }()
 			prod := strings.ToLower(strings.ReplaceAll(soft.name[1], " ", "_") + ":" + soft.name[2])
 			var err error
-			soft.cpe, err = client.FetchCPEName(prod, ctx)
+			soft.cpe, err = db.Lookup(prod)
 			if err != nil {
 				soft.cpe = nil
 				return
 			}
-			client.http.CloseIdleConnections()
 		}()
 	}
 
@@ -172,7 +76,7 @@ func processOutput(ctx context.Context, output string) string {
 				defer wg.Done()
 				defer func() { <-sem }()
 
-				resp, err := client.Fetch("https://services.nvd.nist.gov/rest/json/cves/2.0?cpeName=", cpe, ctx)
+				resp, err := db.Fetch("https://services.nvd.nist.gov/rest/json/cves/2.0?cpeName=", cpe)
 				if err != nil {
 					return
 				}
@@ -184,8 +88,6 @@ func processOutput(ctx context.Context, output string) string {
 						mu.Unlock()
 					}
 				}
-
-				client.http.CloseIdleConnections()
 			}()
 		}
 
@@ -205,14 +107,12 @@ func processOutput(ctx context.Context, output string) string {
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			info, err := client.Fetch("https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=", cve.name[0], ctx)
+			info, err := db.Fetch("https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=", cve.name[0])
 			if err != nil {
 				return
 			}
 
 			cve.cve = append(cve.cve, info...)
-
-			client.http.CloseIdleConnections()
 		}()
 	}
 
@@ -240,7 +140,7 @@ func processOutput(ctx context.Context, output string) string {
 				for _, cve := range soft.cve {
 					outputListed = append(outputListed, "\n    "+cve.ID)
 
-					outputListed = appendOutput(outputListed, cve)
+					outputListed = AppendOutput(outputListed, cve)
 				}
 			}
 		}
@@ -264,7 +164,7 @@ func processOutput(ctx context.Context, output string) string {
 						return str[:len(str)-2]
 					}(cveStruct.lines)))
 
-				outputListed = appendOutput(outputListed, cveStruct.cve[0])
+				outputListed = AppendOutput(outputListed, cveStruct.cve[0])
 			}
 		}
 	}
@@ -321,7 +221,7 @@ func FindCVEs(lines []string) (cve, software []*Order) {
 	return software, cve
 }
 
-func appendOutput(outputListed []string, cve *CVEInfo) []string {
+func AppendOutput(outputListed []string, cve *CVEInfo) []string {
 	outputListed = append(outputListed, fmt.Sprintf(
 		"\n    Description:\n%s",
 		cve.Description,

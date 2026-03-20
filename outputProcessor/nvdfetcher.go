@@ -1,4 +1,4 @@
-package core
+package outputprocessor
 
 import (
 	"context"
@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -64,26 +63,25 @@ type SoftVerLookup struct {
 }
 
 type NVDClient struct {
-	mu   sync.Mutex
+	ctx  context.Context
 	http *http.Client
 }
 
-var limiter = rate.NewLimiter(rate.Every((time.Duration(rand.Intn(1000)+6000))*time.Millisecond), 1)
+var NVDlimiter = rate.NewLimiter(rate.Every((time.Duration(rand.Intn(1000)+6000))*time.Millisecond), 1)
 
 func NewNVDClient(ctx context.Context) *NVDClient {
 	return &NVDClient{
+		ctx:  ctx,
 		http: &http.Client{Timeout: 10 * time.Second},
 	}
 }
 
-func (n *NVDClient) FetchCPEName(prod string, ctx context.Context) ([]string, error) {
-	limiter.Wait(ctx)
+func (n *NVDClient) Lookup(prod string) ([]string, error) {
+	NVDlimiter.Wait(n.ctx)
 
 	matchStringQuery := fmt.Sprintf("https://services.nvd.nist.gov/rest/json/cpematch/2.0?matchStringSearch=cpe:2.3:*:*:%s", prod)
 
-	n.mu.Lock()
 	resp, err := n.http.Get(matchStringQuery)
-	n.mu.Unlock()
 
 	if err != nil {
 		return nil, err
@@ -117,14 +115,12 @@ func (n *NVDClient) FetchCPEName(prod string, ctx context.Context) ([]string, er
 	return success, nil
 }
 
-func (n *NVDClient) Fetch(link, subject string, ctx context.Context) ([]*CVEInfo, error) {
-	limiter.Wait(ctx)
+func (n *NVDClient) Fetch(link, subject string) ([]*CVEInfo, error) {
+	NVDlimiter.Wait(n.ctx)
 
 	url := link + subject
 
-	n.mu.Lock()
 	resp, err := n.http.Get(url)
-	n.mu.Unlock()
 
 	if err != nil {
 		return nil, err

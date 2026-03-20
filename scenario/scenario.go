@@ -1,7 +1,8 @@
-package core
+package scenario
 
 import (
 	"clip/modules"
+	r "clip/runtime"
 	"clip/utility"
 	"context"
 	"fmt"
@@ -51,7 +52,7 @@ func (s *Scenario) execute(ctx context.Context, outputter func(string, *modules.
 					return
 				}
 
-				execution := NewRuntime()
+				execution := r.NewRuntime()
 
 				startFrom := strings.IndexFunc(m.Content,
 					func(r rune) bool { return r == '\n' })

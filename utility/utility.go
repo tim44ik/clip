@@ -63,24 +63,6 @@ func WrapReaderToChannel(reader io.Reader) (ch chan string, free func()) {
 	return
 }
 
-func NumberValidator(min, max int) func(string) error {
-	return func(s string) error {
-		i, e := strconv.Atoi(s)
-		if e != nil {
-			return e
-		}
-
-		if i < min {
-			return fmt.Errorf("number must be greater or equal %d", min)
-		}
-		if i > max {
-			return fmt.Errorf("number must be less or equal %d", max)
-		}
-
-		return nil
-	}
-}
-
 func NewDropButton(icon fyne.Resource, canvas fyne.Canvas, menu *fyne.Menu) *widget.Button {
 	popup := widget.NewPopUpMenu(menu, canvas)
 
@@ -146,7 +128,7 @@ func GetQueue(langmap []string, m []*modules.Module) ([][]*modules.Module, error
 
 			j++
 		}
-		if len(cases) != 2 || j != nextLine-1 {
+		if len(cases) != 2 || j != nextLine {
 			return nil, errors.UniversalError{ErrorText: langmap[37], Module: m[i].Name}
 		}
 

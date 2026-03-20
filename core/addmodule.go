@@ -13,18 +13,18 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-func AddModule(a *ClipWindow) {
+func (a *ClipWindow) addModule() {
 	a.applyModuleChanges()
 	input := widget.NewMultiLineEntry()
 	scroll := container.NewVScroll(input)
 	addmoduleDialog := dialog.NewCustomConfirm(
-		a.langmap[a.Modules.CurrentLang][26],
-		a.langmap[a.Modules.CurrentLang][23],
-		a.langmap[a.Modules.CurrentLang][24],
+		a.langmap[a.modules.CurrentLang][26],
+		a.langmap[a.modules.CurrentLang][23],
+		a.langmap[a.modules.CurrentLang][24],
 		container.NewPadded(
 			container.NewBorder(
 				canvas.NewText(
-					a.langmap[a.Modules.CurrentLang][25],
+					a.langmap[a.modules.CurrentLang][25],
 					color.Black,
 				),
 				nil, nil, nil, scroll,
@@ -46,7 +46,7 @@ func addDialog(a *ClipWindow, input *widget.Entry, b bool) {
 			Content: "",
 			Output:  "",
 		}
-		a.Modules.ChildModules = append(a.Modules.ChildModules, m)
+		a.modules.ChildModules = append(a.modules.ChildModules, m)
 		a.elms.modulesPanel.Add(CreateModuleButton(a, m))
 		a.elms.modulesPanel.Refresh()
 		a.applyModuleChanges()
