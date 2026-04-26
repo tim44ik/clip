@@ -2,11 +2,10 @@ package encrypter
 
 import (
 	"bytes"
+	"clip/errors"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"errors"
-	"fmt"
 	"io"
 	"os"
 
@@ -22,27 +21,27 @@ func NewAES256SCRYPT() *AES256SCRYPT {
 func (a *AES256SCRYPT) Encrypt(filename, password string) error {
 	data, err := os.ReadFile(filename)
 	if err != nil {
-		return err
+		return errors.New(errReadingProfile)
 	}
 
 	salt := make([]byte, 16)
 	if _, err := io.ReadFull(rand.Reader, salt); err != nil {
-		return err
+		return errors.New(errGeneratingSalt)
 	}
 
 	key, err := scrypt.Key([]byte(password), salt, 1<<15, 8, 1, 32)
 	if err != nil {
-		return err
+		return errors.New(errGeneratingKey)
 	}
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return err
+		return errors.New(errGeneratingCipher)
 	}
 
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return err
+		return errors.New(errGeneratingGCM)
 	}
 
 	nonce := make([]byte, gcm.NonceSize())
@@ -63,38 +62,47 @@ func (a *AES256SCRYPT) Encrypt(filename, password string) error {
 	buf.WriteByte(1)
 	buf.Write(payload)
 
-	return os.WriteFile(filename, buf.Bytes(), 0600)
+	err = os.WriteFile(filename, buf.Bytes(), 0600)
+	if err != nil {
+		return errors.New(errWritingToFile)
+	}
+	return nil
 }
 
 func (a *AES256SCRYPT) Decrypt(data []byte, password string) ([]byte, error) {
 	if len(data) < 16 {
-		return nil, fmt.Errorf("invalid data")
+		return nil, errors.New(errInvalidData)
 	}
 
 	salt := data[:16]
 
 	key, err := scrypt.Key([]byte(password), salt, 1<<15, 8, 1, 32)
 	if err != nil {
-		return nil, err
+		return nil, errors.New(errGeneratingKey)
 	}
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return nil, err
+		return nil, errors.New(errGeneratingCipher)
 	}
 
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return nil, err
+		return nil, errors.New(errGeneratingGCM)
 	}
 
 	nonceSize := gcm.NonceSize()
 	if len(data) < 16+nonceSize {
-		return nil, errors.New("invalid data")
+		return nil, errors.New(errInvalidData)
 	}
 
 	nonce := data[16 : 16+nonceSize]
 	ciphertext := data[16+nonceSize:]
 
-	return gcm.Open(nil, nonce, ciphertext, nil)
+	bytes, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return nil, errors.New(errReadingProfile)
+	}
+
+	return bytes, nil
 }

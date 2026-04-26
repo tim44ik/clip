@@ -37,9 +37,9 @@ func ProcessOutput(db DB, output string) string {
 
 	softByLine, cvesByLine := FindCVEs(outputListed)
 
-	maxGoroutines := 50
+	maxGoroutines := 5
 	sem := make(chan struct{}, maxGoroutines)
-
+	defer close(sem)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 

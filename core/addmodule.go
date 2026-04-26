@@ -1,6 +1,7 @@
 package core
 
 import (
+	"clip/locales"
 	"clip/modules"
 
 	"image/color"
@@ -13,50 +14,46 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-func (a *ClipWindow) addModule() {
+func (a *ClipWindow) addDialog() {
 	a.applyModuleChanges()
 	input := widget.NewMultiLineEntry()
 	scroll := container.NewVScroll(input)
 	addmoduleDialog := dialog.NewCustomConfirm(
-		a.langmap[a.modules.CurrentLang][26],
-		a.langmap[a.modules.CurrentLang][23],
-		a.langmap[a.modules.CurrentLang][24],
+		locales.T(a.modules.CurrentLang, "add_new_module"),
+		locales.T(a.modules.CurrentLang, "ok"),
+		locales.T(a.modules.CurrentLang, "cancel"),
 		container.NewPadded(
 			container.NewBorder(
 				canvas.NewText(
-					a.langmap[a.modules.CurrentLang][25],
+					locales.T(a.modules.CurrentLang, "enter_new_module_name"),
 					color.Black,
 				),
 				nil, nil, nil, scroll,
 			),
 		), func(b bool) {
-			addDialog(a, input, b)
+			if b {
+				a.add(input.Text, "")
+			} else {
+				return
+			}
 		}, a.Window)
 	addmoduleDialog.Resize(fyne.NewSize(500, 300))
 	addmoduleDialog.Show()
 }
 
-func addDialog(a *ClipWindow, input *widget.Entry, b bool) {
-	if b {
-		if input.Text == "" {
-			return
-		}
-		m := &modules.Module{
-			Name:    input.Text,
-			Content: "",
-			Output:  "",
-		}
-		a.modules.ChildModules = append(a.modules.ChildModules, m)
-		a.elms.modulesPanel.Add(CreateModuleButton(a, m))
-		a.elms.modulesPanel.Refresh()
-		a.applyModuleChanges()
-		a.selectModule(m)
-	} else {
+func (a *ClipWindow) add(name, content string) {
+	if name == "" {
 		return
 	}
+	m := modules.CreateModule(name, content)
+	a.modules.ChildModules = append(a.modules.ChildModules, m)
+	a.elms.modulesPanel.Add(a.createModuleButton(m))
+	a.elms.modulesPanel.Refresh()
+	a.applyModuleChanges()
+	a.selectModule(m)
 }
 
-func CreateModuleButton(a *ClipWindow, m *modules.Module) fyne.Widget {
+func (a *ClipWindow) createModuleButton(m *modules.Module) fyne.Widget {
 	if len(m.Name) > 18 && !strings.Contains(m.Name, "\n") {
 		return widget.NewButton(func(s string) string {
 			s = strings.TrimSpace(s)

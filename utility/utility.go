@@ -7,7 +7,6 @@ import (
 
 	"bytes"
 	"context"
-	"fmt"
 	"io"
 	"runtime"
 	"strconv"
@@ -89,7 +88,7 @@ func EnumLines(output string) []string {
 	return divided
 }
 
-func GetQueue(langmap []string, m []*modules.Module) ([][]*modules.Module, error) {
+func GetQueue(m []*modules.Module) ([][]*modules.Module, error) {
 	queueMap := make(map[int][]*modules.Module, 0)
 
 	for i := range m {
@@ -97,13 +96,13 @@ func GetQueue(langmap []string, m []*modules.Module) ([][]*modules.Module, error
 		nextLine := strings.IndexFunc(trimmedSpaces, func(r rune) bool { return r == '\n' })
 
 		if nextLine == -1 && !strings.Contains(strings.ToLower(m[i].Content), "queue") {
-			return nil, errors.UniversalError{ErrorText: langmap[37], Module: m[i].Name}
+			return nil, errors.NewWithPlace(errQueueNotDeclarated, errors.Place(m[i].Name))
 		}
 		if nextLine != -1 && !strings.Contains(strings.ToLower(m[i].Content[:nextLine]), "queue") {
-			return nil, errors.UniversalError{ErrorText: langmap[37], Module: m[i].Name}
+			return nil, errors.NewWithPlace(errQueueNotDeclarated, errors.Place(m[i].Name))
 		}
 		if nextLine == -1 && strings.Contains(strings.ToLower(m[i].Content), "queue") {
-			return nil, errors.UniversalError{ErrorText: langmap[38], Module: m[i].Name}
+			return nil, errors.NewWithPlace(errNoCommandsGiven, errors.Place(m[i].Name))
 		}
 
 		j := 0
@@ -123,18 +122,18 @@ func GetQueue(langmap []string, m []*modules.Module) ([][]*modules.Module, error
 			} else if step == ")" && len(cases) == 1 {
 				cases = append(cases, j)
 			} else {
-				return nil, fmt.Errorf("%s %s", langmap[37], m[i].Name)
+				return nil, errors.NewWithPlace(errQueueNotDeclarated, errors.Place(m[i].Name))
 			}
 
 			j++
 		}
 		if len(cases) != 2 || j != nextLine {
-			return nil, errors.UniversalError{ErrorText: langmap[37], Module: m[i].Name}
+			return nil, errors.NewWithPlace(errQueueNotDeclarated, errors.Place(m[i].Name))
 		}
 
 		qNum, err := strconv.Atoi(trimmedSpaces[cases[0]+1 : cases[1]])
 		if err != nil {
-			return nil, errors.UniversalError{ErrorText: langmap[37], Module: m[i].Name}
+			return nil, errors.NewWithPlace(errQueueNotDeclarated, errors.Place(m[i].Name))
 		}
 
 		queueMap[qNum] = append(queueMap[qNum], m[i])

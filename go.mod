@@ -5,6 +5,7 @@ go 1.26.1
 require (
 	fyne.io/fyne/v2 v2.7.3
 	github.com/leaanthony/go-ansi-parser v1.6.1
+	github.com/nicksnyder/go-i18n/v2 v2.5.1
 	github.com/phpdave11/gofpdf v1.4.3
 	golang.org/x/crypto v0.49.0
 	golang.org/x/text v0.35.0
@@ -32,7 +33,6 @@ require (
 	github.com/jsummers/gobmp v0.0.0-20230614200233-a9de23ed2e25 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect
-	github.com/nicksnyder/go-i18n/v2 v2.5.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rivo/uniseg v0.2.0 // indirect
 	github.com/rogpeppe/go-internal v1.10.0 // indirect

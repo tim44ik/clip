@@ -2,6 +2,7 @@ package storage
 
 import (
 	"bytes"
+	"clip/errors"
 	"clip/modules"
 	"encoding/json"
 	"os"
@@ -25,20 +26,24 @@ func (j *Json) Encode(mods *modules.ClipModules, path string) (error, string) {
 
 	file, err := os.Create(path)
 	if err != nil {
-		return err, ""
+		return errors.New(errCreatingFile), ""
 	}
 	defer file.Close()
 
 	encoder := json.NewEncoder(file)
 	encoder.SetIndent("", " ")
-	return encoder.Encode(mods), path
+	err = encoder.Encode(mods)
+	if err != nil {
+		return errors.New(errCreatingFile), ""
+	}
+	return nil, path
 }
 
 func (j *Json) Decode(mods *modules.ClipModules, fileData []byte) error {
 
 	decoder := json.NewDecoder(bytes.NewBuffer(fileData))
-	if e := decoder.Decode(mods); e != nil {
-		return e
+	if err := decoder.Decode(mods); err != nil {
+		return errors.New(errDecodingFile)
 	}
 
 	if mods.MainModule == nil {

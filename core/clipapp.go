@@ -2,8 +2,9 @@ package core
 
 import (
 	"clip/encrypter"
-	"clip/errors"
+	appErrors "clip/errors"
 	"clip/filemanager"
+	"clip/locales"
 	"clip/modules"
 	outputprocessor "clip/outputProcessor"
 	"clip/reporter"
@@ -14,6 +15,8 @@ import (
 	_ "embed"
 	"fmt"
 	"image/color"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -37,12 +40,13 @@ type ClipWindow struct {
 
 	selectedModule *modules.Module
 
-	langmap map[string][]string
-
 	encryptionType encrypter.Encrypter
 
 	Window fyne.Window
 
+	threads string
+
+	langs    []string
 	profiles struct {
 		exists bool
 		path   string
@@ -70,13 +74,17 @@ type ClipWindow struct {
 
 func CreateWindow() (a *ClipWindow) {
 	a = &ClipWindow{modules: &modules.ClipModules{}}
-	a.langmapInit()
-	_, ok := a.langmap[a.modules.CurrentLang]
-	if !ok {
-		a.modules.CurrentLang = "en"
+	var err error
+	err, a.langs = locales.Init()
+	if err != nil {
+		return
 	}
-
-	a.modules.MainModule = &modules.Module{Name: a.langmap[a.modules.CurrentLang][0]}
+	name := locales.T(a.modules.CurrentLang, "main")
+	if name == "" {
+		a.modules.CurrentLang = "en"
+		name = locales.T(a.modules.CurrentLang, "main")
+	}
+	a.modules.MainModule = modules.CreateModule(name, "")
 
 	a.profiles.exists = false
 
@@ -169,15 +177,7 @@ func (a *ClipWindow) buildWindow(app fyne.App) {
 
 func (a *ClipWindow) selectModule(m *modules.Module) {
 	a.selectedModule = m
-	a.elms.title.Text = fmt.Sprintf("%s '%s'", a.langmap[a.modules.CurrentLang][15], func(s string) string {
-		if !strings.Contains(s, "\n") && len(s) < 30 {
-			return s
-		} else if strings.Contains(s, "\n") && len(s) < 30 {
-			return strings.ReplaceAll(s, "\n", " ")
-		}
-		s = strings.ReplaceAll(s, "\n", " ")
-		return s[:31] + " ..."
-	}(m.Name))
+	a.elms.title.Text = fmt.Sprintf("%s '%s'", locales.T(a.modules.CurrentLang, "module"), a.FormatTitle(m.Name))
 
 	a.elms.title.Refresh()
 
@@ -232,6 +232,7 @@ func (a *ClipWindow) applyModuleChanges() {
 		return
 	}
 	a.selectedModule.Content = a.elms.moduleContentEntry.Text
+	a.threads = a.elms.threadEntry.Text
 }
 
 func (a *ClipWindow) initCheck() bool {
@@ -240,19 +241,19 @@ func (a *ClipWindow) initCheck() bool {
 	}
 
 	if a.currentScenario != nil {
-		dialog.ShowError(fmt.Errorf("%s", a.langmap[a.modules.CurrentLang][16]), a.Window)
+		ShowError(a.modules.CurrentLang, appErrors.New(errScenarioInProcess), a.Window)
 		return true
 	}
 	return false
 }
 
 func (a *ClipWindow) getThreads() (t int, err error) {
-	if a.elms.threadEntry.Text == "" {
+	if a.threads == "" {
 		t = 1
 	} else {
-		t, err = strconv.Atoi(a.elms.threadEntry.Text)
+		t, err = strconv.Atoi(a.threads)
 		if err != nil {
-			return 0, errors.UniversalError{ErrorText: a.langmap[a.modules.CurrentLang][39], Module: a.langmap[a.modules.CurrentLang][2]}
+			return 0, appErrors.NewWithPlace(errDataFormat, appErrors.Place("threads_number"))
 		}
 	}
 	return t, nil
@@ -262,7 +263,7 @@ func (a *ClipWindow) runner(scenario *scenario.Scenario, ctx context.Context) {
 	a.elms.activity.Show()
 	a.elms.activity.Start()
 
-	scenario.BeginScenario(ctx,
+	scenario.Execute(ctx,
 		func(s string, m *modules.Module) {
 			fyne.DoAndWait(func() { a.addModuleOutput(m, s) })
 		})
@@ -273,8 +274,8 @@ func (a *ClipWindow) runner(scenario *scenario.Scenario, ctx context.Context) {
 
 		if !a.defineOutput(ctx) {
 			dialog.ShowInformation(
-				a.langmap[a.modules.CurrentLang][17],
-				a.langmap[a.modules.CurrentLang][18],
+				locales.T(a.modules.CurrentLang, "completed"),
+				locales.T(a.modules.CurrentLang, "scenario_completed"),
 				a.Window,
 			)
 		}
@@ -294,13 +295,13 @@ func (a *ClipWindow) beginScenario() {
 
 	t, err := a.getThreads()
 	if err != nil {
-		dialog.ShowError(err, a.Window)
+		ShowError(a.modules.CurrentLang, err, a.Window)
 		return
 	}
 
-	queue, err := utility.GetQueue(a.langmap[a.modules.CurrentLang], a.modules.ChildModules)
+	queue, err := utility.GetQueue(a.modules.ChildModules)
 	if err != nil {
-		dialog.ShowError(err, a.Window)
+		ShowError(a.modules.CurrentLang, err, a.Window)
 		return
 	}
 
@@ -314,28 +315,131 @@ func (a *ClipWindow) beginScenario() {
 
 func (a *ClipWindow) defineOutput(ctx context.Context) bool {
 	makeReportFor := []*modules.Module{}
+	var process bool
 	for _, m := range a.modules.ChildModules {
 		if m.MakeReport.Do {
 			makeReportFor = append(makeReportFor, m)
 		}
+		if m.MakeReport.Process {
+			process = true
+		}
 	}
 
-	if len(makeReportFor) > 0 {
-		f := filemanager.NewFileManager(a.Window, a.langmap[a.modules.CurrentLang], a.profiles.path, a.profiles.exists)
-		f.GetReportType(func(r reporter.Reporter) {
-			f.GetDBType(ctx, func(db outputprocessor.DB) {
-				go f.ReportСreationWindow(db, r, makeReportFor)
-			})
+	if len(makeReportFor) == 0 {
+		return false
+	}
 
+	errChan := make(chan error)
+	ctx, cancel := context.WithCancel(ctx)
+	go func() {
+		for err := range errChan {
+			if err != nil {
+				cancel()
+
+				fyne.Do(func() {
+					ShowError(a.modules.CurrentLang, err, a.Window)
+				})
+				close(errChan)
+				return
+			}
+		}
+	}()
+
+	f := filemanager.NewFileManager(
+		a.modules.CurrentLang,
+		a.profiles.path,
+		a.Window,
+		a.profiles.exists,
+	)
+
+	callback := func(r reporter.Reporter, db outputprocessor.DB) {
+
+		if ctx.Err() != nil {
+			return
+		}
+
+		go f.ReportCreationWindow(db, r,
+			func(path string) {
+
+				if ctx.Err() != nil {
+					return
+				}
+
+				progressChan := make(chan float64)
+				defer close(progressChan)
+
+				ext := r.GetFileType()
+				if filepath.Ext(path) != ext {
+					defer os.Remove(path)
+					path += ext
+				}
+
+				go r.CreateReport(db, makeReportFor, path, progressChan, errChan)
+
+				progressBar := widget.NewProgressBar()
+
+				progressWindow := dialog.NewCustomWithoutButtons(
+					locales.T(a.modules.CurrentLang, "creating_report"),
+					progressBar,
+					a.Window,
+				)
+
+				fyne.Do(func() {
+					progressWindow.Show()
+				})
+
+				for {
+					select {
+
+					case <-ctx.Done():
+						fyne.Do(func() {
+							progressWindow.Hide()
+						})
+						return
+
+					case p, ok := <-progressChan:
+						if !ok {
+							fyne.Do(func() {
+								progressWindow.Hide()
+							})
+							return
+						}
+
+						fyne.DoAndWait(func() {
+							progressBar.SetValue(p)
+						})
+
+						if p >= 1 {
+							fyne.Do(func() {
+								progressWindow.Hide()
+							})
+							return
+						}
+					}
+				}
+			},
+		)
+	}
+
+	var db outputprocessor.DB
+	switch process {
+	case true:
+		f.GetDBType(ctx, func(db outputprocessor.DB) {
+			if ctx.Err() != nil {
+				return
+			}
+			f.GetReportType(errChan, db, callback)
 		})
-		return true
+	case false:
+		f.GetReportType(errChan, db, callback)
 	}
-	return false
+
+	return true
 }
 
 func (a *ClipWindow) interruptScenario() {
 	if a.currentScenario == nil {
-		dialog.ShowError(errors.UniversalError{ErrorText: a.langmap[a.modules.CurrentLang][19], Module: ""}, a.Window)
+		ShowError(a.modules.CurrentLang, appErrors.New(errNotStarted), a.Window)
 		return
 	}
 	if a.cancel != nil {
@@ -345,8 +449,8 @@ func (a *ClipWindow) interruptScenario() {
 	a.currentScenario = nil
 	a.elms.activity.Hide()
 	dialog.ShowInformation(
-		a.langmap[a.modules.CurrentLang][20],
-		a.langmap[a.modules.CurrentLang][21],
+		locales.T(a.modules.CurrentLang, "interrupted"),
+		locales.T(a.modules.CurrentLang, "scenario_interrupted"),
 		a.Window,
 	)
 }
@@ -358,7 +462,7 @@ func (a *ClipWindow) selectMainModule() {
 func (a *ClipWindow) refreshModuleGui() {
 	a.elms.modulesPanel.RemoveAll()
 	for _, m := range a.modules.ChildModules {
-		a.elms.modulesPanel.Add(CreateModuleButton(a, m))
+		a.elms.modulesPanel.Add(a.createModuleButton(m))
 	}
 
 	a.elms.modulesPanel.Refresh()
@@ -386,93 +490,323 @@ func (a *ClipWindow) cutOutput() {
 	}
 }
 
+func (a *ClipWindow) FormatTitle(s string) string {
+	s = strings.ReplaceAll(s, "\n", " ")
+	runeS := []rune(s)
+	if len(runeS) < 30 {
+		return s
+	}
+	return string(runeS[:31]) + "..."
+}
+
 func (a *ClipWindow) fullRefresh() {
 	a.elms.topPanel.RemoveAll()
 	a.elms.topPanel.Add(
 		utility.NewDropButton(theme.FolderOpenIcon(),
 			a.Window.Canvas(), fyne.NewMenu("Profiles",
-				fyne.NewMenuItem(a.langmap[a.modules.CurrentLang][5],
+				fyne.NewMenuItem(locales.T(a.modules.CurrentLang, "load_script"),
 					func() {
 						a.applyModuleChanges()
-						f := filemanager.NewFileManager(a.Window,
-							a.langmap[a.modules.CurrentLang],
+						errChan := make(chan error)
+						ctx, cancel := context.WithCancel(context.Background())
+						go func() {
+							for {
+								select {
+								case <-ctx.Done():
+									return
+
+								case err := <-errChan:
+									if err != nil {
+										cancel()
+
+										fyne.Do(func() {
+											ShowError(a.modules.CurrentLang, err, a.Window)
+										})
+										close(errChan)
+										return
+									}
+								}
+							}
+						}()
+
+						f := filemanager.NewFileManager(
+							a.modules.CurrentLang,
 							a.profiles.path,
-							a.profiles.exists)
+							a.Window,
+							a.profiles.exists,
+						)
+
+						f.LoadScripts(errChan, func(scripts []*filemanager.Script) {
+							if ctx.Err() != nil {
+								return
+							}
+
+							f.OpenScriptPicker(scripts, func(name, content string) {
+								if ctx.Err() != nil {
+									return
+								}
+								a.add(name, content)
+							})
+						})
+					},
+				),
+				fyne.NewMenuItem(locales.T(a.modules.CurrentLang, "load"),
+					func() {
+						a.applyModuleChanges()
+						errChan := make(chan error)
+						ctx, cancel := context.WithCancel(context.Background())
+						go func() {
+							for {
+								select {
+								case <-ctx.Done():
+									return
+
+								case err := <-errChan:
+									if err != nil {
+										cancel()
+
+										fyne.Do(func() {
+											ShowError(a.modules.CurrentLang, err, a.Window)
+										})
+										close(errChan)
+										return
+									}
+								}
+							}
+						}()
+
+						f := filemanager.NewFileManager(
+							a.modules.CurrentLang,
+							a.profiles.path,
+							a.Window,
+							a.profiles.exists,
+						)
+
 						f.LoadProfile(
+							errChan,
 							func(mods modules.ClipModules, path string, enc encrypter.Encrypter) {
-								a.modules = &mods
-								a.profiles.path = path
-								a.encryptionType = enc
-								a.profiles.exists = true
-								a.refreshModuleGui()
-								a.fullRefresh()
-								a.selectModule(a.modules.MainModule)
-								a.skip = true
+
+								if ctx.Err() != nil {
+									return
+								}
+
+								fyne.Do(func() {
+									a.modules = &mods
+									a.profiles.path = path
+									a.encryptionType = enc
+									a.profiles.exists = true
+
+									a.refreshModuleGui()
+									a.fullRefresh()
+									a.selectModule(a.modules.MainModule)
+
+									a.skip = true
+								})
 							},
 						)
 					}),
-				fyne.NewMenuItem(a.langmap[a.modules.CurrentLang][6],
+				fyne.NewMenuItem(locales.T(a.modules.CurrentLang, "load_new_window"),
 					func() {
 						a.applyModuleChanges()
-						f := filemanager.NewFileManager(a.Window,
-							a.langmap[a.modules.CurrentLang],
+
+						errChan := make(chan error)
+
+						ctx, cancel := context.WithCancel(context.Background())
+						go func() {
+							for {
+								select {
+								case <-ctx.Done():
+									return
+
+								case err := <-errChan:
+									if err != nil {
+										cancel()
+
+										fyne.Do(func() {
+											ShowError(a.modules.CurrentLang, err, a.Window)
+										})
+										close(errChan)
+										return
+									}
+								}
+							}
+						}()
+
+						f := filemanager.NewFileManager(
+							a.modules.CurrentLang,
 							a.profiles.path,
-							a.profiles.exists)
-						f.LoadProfile(func(mods modules.ClipModules, path string, enc encrypter.Encrypter) {
-							newWindow := CreateWindow()
-							newWindow.modules = &mods
-							newWindow.profiles.path = path
-							newWindow.encryptionType = enc
-							newWindow.profiles.exists = true
-							newWindow.skip = true
-							newWindow.refreshModuleGui()
-							newWindow.fullRefresh()
-							newWindow.selectModule(newWindow.modules.MainModule)
-							newWindow.Window.Show()
-						})
+							a.Window,
+							a.profiles.exists,
+						)
+
+						f.LoadProfile(
+							errChan,
+							func(mods modules.ClipModules, path string, enc encrypter.Encrypter) {
+
+								if ctx.Err() != nil {
+									return
+								}
+
+								newWindow := CreateWindow()
+
+								newWindow.modules = &mods
+								newWindow.profiles.path = path
+								newWindow.encryptionType = enc
+								newWindow.profiles.exists = true
+								newWindow.skip = true
+
+								newWindow.refreshModuleGui()
+								newWindow.fullRefresh()
+								newWindow.selectModule(newWindow.modules.MainModule)
+
+								fyne.Do(func() {
+									newWindow.Window.Show()
+								})
+							},
+						)
 					}),
-				fyne.NewMenuItem(a.langmap[a.modules.CurrentLang][7],
+				fyne.NewMenuItem(locales.T(a.modules.CurrentLang, "save"),
 					func() {
 						a.applyModuleChanges()
-						f := filemanager.NewFileManager(a.Window,
-							a.langmap[a.modules.CurrentLang],
+
+						errChan := make(chan error)
+
+						ctx, cancel := context.WithCancel(context.Background())
+						go func() {
+							for {
+								select {
+								case <-ctx.Done():
+									return
+
+								case err := <-errChan:
+									if err != nil {
+										cancel()
+
+										fyne.Do(func() {
+											ShowError(a.modules.CurrentLang, err, a.Window)
+										})
+										close(errChan)
+										return
+									}
+								}
+							}
+						}()
+
+						f := filemanager.NewFileManager(
+							a.modules.CurrentLang,
 							a.profiles.path,
-							a.profiles.exists)
-						f.GetProfileType(a.skip, func(e st.Encoder) {
-							f.SaveProfile(a.encryptionType, e, a.modules,
-								func(e encrypter.Encrypter, exists bool, path string) {
-									a.encryptionType = e
+							a.Window,
+							a.profiles.exists,
+						)
+
+						f.GetProfileType(errChan, a.skip, func(e st.Encoder) {
+							if ctx.Err() != nil {
+								return
+							}
+
+							f.SaveProfile(errChan,
+								a.encryptionType,
+								e,
+								a.modules,
+								func(enc encrypter.Encrypter, exists bool, path string) {
+									if ctx.Err() != nil {
+										return
+									}
+
+									a.encryptionType = enc
 									a.profiles.exists = exists
 									a.profiles.path = path
 									a.skip = true
-								})
+								},
+							)
 						})
-
-					}),
-				fyne.NewMenuItem(a.langmap[a.modules.CurrentLang][8],
+					},
+				),
+				fyne.NewMenuItem(locales.T(a.modules.CurrentLang, "save_as"),
 					func() {
 						a.applyModuleChanges()
-						f := filemanager.NewFileManager(a.Window,
-							a.langmap[a.modules.CurrentLang],
+
+						errChan := make(chan error)
+
+						ctx, cancel := context.WithCancel(context.Background())
+						go func() {
+							for {
+								select {
+								case <-ctx.Done():
+									return
+
+								case err := <-errChan:
+									if err != nil {
+										cancel()
+
+										fyne.Do(func() {
+											ShowError(a.modules.CurrentLang, err, a.Window)
+										})
+										close(errChan)
+										return
+									}
+								}
+							}
+						}()
+
+						f := filemanager.NewFileManager(
+							a.modules.CurrentLang,
 							a.profiles.path,
-							a.profiles.exists)
-						f.GetProfileType(false, func(e st.Encoder) {
+							a.Window,
+							a.profiles.exists,
+						)
+
+						f.GetProfileType(errChan, false, func(e st.Encoder) {
+
+							if ctx.Err() != nil {
+								return
+							}
+
 							f.GetEncryptionType(func(enc encrypter.Encrypter) {
+
+								if ctx.Err() != nil {
+									return
+								}
+
 								if enc == nil {
-									f.SaveProfileAs("", enc, e, a.modules,
+									f.SaveProfileAs(errChan,
+										"",
+										enc,
+										e,
+										a.modules,
 										func(enc encrypter.Encrypter, exists bool, path string) {
+
+											if ctx.Err() != nil {
+												return
+											}
+
 											a.encryptionType = enc
 											a.profiles.exists = exists
 											a.profiles.path = path
 											a.skip = true
-
 										},
 									)
 									return
 								}
-								f.GetPassword(func(p string) {
-									f.SaveProfileAs(p, enc, e, a.modules,
+
+								f.GetPassword(errChan, func(p string) {
+
+									if ctx.Err() != nil {
+										return
+									}
+
+									f.SaveProfileAs(
+										errChan,
+										p,
+										enc,
+										e,
+										a.modules,
 										func(enc encrypter.Encrypter, exists bool, path string) {
+
+											if ctx.Err() != nil {
+												return
+											}
+
 											a.encryptionType = enc
 											a.profiles.exists = exists
 											a.profiles.path = path
@@ -482,18 +816,18 @@ func (a *ClipWindow) fullRefresh() {
 								})
 							})
 						})
-
-					}),
+					},
+				),
 			)))
 
 	a.elms.topPanel.Add(
 		utility.NewDropButton(theme.MediaPlayIcon(),
 			a.Window.Canvas(), fyne.NewMenu("Scenario",
-				fyne.NewMenuItem(a.langmap[a.modules.CurrentLang][9],
+				fyne.NewMenuItem(locales.T(a.modules.CurrentLang, "begin_scenario"),
 					func() { a.beginScenario() }),
-				fyne.NewMenuItem(a.langmap[a.modules.CurrentLang][10],
+				fyne.NewMenuItem(locales.T(a.modules.CurrentLang, "break_scenario"),
 					func() { a.interruptScenario() }),
-				fyne.NewMenuItem(a.langmap[a.modules.CurrentLang][11],
+				fyne.NewMenuItem(locales.T(a.modules.CurrentLang, "break_and_report"),
 					func() {
 						a.interruptScenario()
 						a.defineOutput(context.Background())
@@ -504,62 +838,54 @@ func (a *ClipWindow) fullRefresh() {
 	a.elms.topPanel.Add(
 		utility.NewDropButton(theme.SettingsIcon(),
 			a.Window.Canvas(), fyne.NewMenu("Change Language",
-				fyne.NewMenuItem(a.langmap[a.modules.CurrentLang][12],
+				fyne.NewMenuItem(locales.T(a.modules.CurrentLang, "change_language"),
 					func() { a.changeLanguageWindow() }))))
 
 	a.elms.topPanel.Add(
 		utility.NewDropButton(theme.CancelIcon(),
 			a.Window.Canvas(), fyne.NewMenu("Quit",
-				fyne.NewMenuItem(a.langmap[a.modules.CurrentLang][13],
+				fyne.NewMenuItem(locales.T(a.modules.CurrentLang, "exit"),
 					func() { a.Window.Close() }),
 			)))
 
-	a.modules.MainModule.Name = a.langmap[a.modules.CurrentLang][0]
+	a.modules.MainModule.Name = locales.T(a.modules.CurrentLang, "main")
 	a.elms.mainButton.RemoveAll()
 	a.elms.mainButton.Add(widget.NewButton(
-		a.langmap[a.modules.CurrentLang][0], func() {
+		a.modules.MainModule.Name, func() {
 			a.applyModuleChanges()
 			a.selectMainModule()
 		}))
 
 	a.elms.title.Text = fmt.Sprintf("%s '%s'",
-		a.langmap[a.modules.CurrentLang][15],
-		func(s string) string {
-			if !strings.Contains(s, "\n") && len(s) < 30 {
-				return s
-			} else if strings.Contains(s, "\n") && len(s) < 30 {
-				return strings.ReplaceAll(s, "\n", " ")
-			}
-			s = strings.ReplaceAll(s, "\n", " ")
-			return s[:31] + " ..."
-		}(a.selectedModule.Name))
+		locales.T(a.modules.CurrentLang, "module"), a.FormatTitle(a.selectedModule.Name))
 
 	a.elms.fullOutputContainer.RemoveAll()
 	a.elms.fullOutputContainer.Add(container.NewVBox(
-		widget.NewButton(a.langmap[a.modules.CurrentLang][32],
+		widget.NewButton(locales.T(a.modules.CurrentLang, "view_full_output"),
 			func() { a.fullOutput() })))
 
 	a.elms.editDeleteButtons.RemoveAll()
 	a.elms.editDeleteButtons.Add(widget.NewButton(
-		a.langmap[a.modules.CurrentLang][3],
+		locales.T(a.modules.CurrentLang, "edit"),
 		func() { a.editModuleName() }))
 	a.elms.editDeleteButtons.Add(widget.NewButton(
-		a.langmap[a.modules.CurrentLang][4],
+		locales.T(a.modules.CurrentLang, "delete"),
 		func() { a.deleteModule() }))
 
 	a.elms.bottomPanelButtons.RemoveAll()
 	a.elms.bottomPanelButtons.Add(widget.NewButton(
-		a.langmap[a.modules.CurrentLang][14],
-		func() { a.addModule() }))
+		locales.T(a.modules.CurrentLang, "add_module"),
+		func() { a.addDialog() }))
 	a.elms.bottomPanelButtons.Add(a.elms.editDeleteButtons)
 
 	a.elms.threadEntry = widget.NewEntry()
 	a.elms.threadEntry.SetPlaceHolder(
-		a.langmap[a.modules.CurrentLang][1],
+		locales.T(a.modules.CurrentLang, "threads_number"),
 	)
+	a.elms.threadEntry.Text = a.threads
 
 	a.elms.processOutputCheck = widget.NewCheck(
-		a.langmap[a.modules.CurrentLang][34],
+		locales.T(a.modules.CurrentLang, "process_output"),
 		func(b bool) {
 			a.selectedModule.MakeReport.Process = b
 			if a.selectedModule == a.modules.MainModule && a.elms.createReportCheck.Checked {
@@ -570,7 +896,7 @@ func (a *ClipWindow) fullRefresh() {
 		})
 
 	a.elms.createReportCheck = widget.NewCheck(
-		a.langmap[a.modules.CurrentLang][2],
+		locales.T(a.modules.CurrentLang, "make_report"),
 		func(b bool) {
 			a.selectedModule.MakeReport.Do = b
 			if !a.selectedModule.MakeReport.Do {

@@ -54,10 +54,10 @@ func (r *Runtime) Execute(code string, ctx context.Context, outputter func(strin
 		path = "/bin/bash"
 	}
 
-	proc, e := os.StartProcess(path, nil, &os.ProcAttr{
+	proc, err := os.StartProcess(path, nil, &os.ProcAttr{
 		Files: []*os.File{stdInR, stdOutW, stdErrW}})
-	if e != nil {
-		return e
+	if err != nil {
+		return err
 	}
 
 	ctx, ctxCancel := context.WithCancel(ctx)

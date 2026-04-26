@@ -1,6 +1,8 @@
 package core
 
 import (
+	"clip/locales"
+
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
@@ -14,9 +16,9 @@ func (a *ClipWindow) fullOutput() {
 	input.Text = a.selectedModule.Output
 	scroll := container.NewVScroll(input)
 	addmoduleDialog := dialog.NewCustomConfirm(
-		a.langmap[a.modules.CurrentLang][33],
-		a.langmap[a.modules.CurrentLang][23],
-		a.langmap[a.modules.CurrentLang][24],
+		locales.T(a.modules.CurrentLang, "full_output"),
+		locales.T(a.modules.CurrentLang, "ok"),
+		locales.T(a.modules.CurrentLang, "cancel"),
 		container.NewPadded(
 			container.NewBorder(
 				nil, nil, nil, nil, scroll,

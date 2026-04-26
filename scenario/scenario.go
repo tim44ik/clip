@@ -22,20 +22,15 @@ func NewScenario(main string, thread int, module [][]*modules.Module) *Scenario 
 	return &Scenario{Main: main, ThreadNumber: thread, ModulesStruct: module}
 }
 
-func (s *Scenario) BeginScenario(ctx context.Context, outputter func(string, *modules.Module)) {
-	s.execute(ctx, outputter)
-}
-
-func (s *Scenario) execute(ctx context.Context, outputter func(string, *modules.Module)) {
+func (s *Scenario) Execute(ctx context.Context, outputter func(string, *modules.Module)) {
 	var wg sync.WaitGroup
 
-	stopper := make(chan struct{}, s.ThreadNumber)
-	defer close(stopper)
+	semaphore := make(chan struct{}, s.ThreadNumber)
+	defer close(semaphore)
 
 	for i := range s.ModulesStruct {
+		wg.Add(len(s.ModulesStruct[i]))
 		for _, m := range s.ModulesStruct[i] {
-			wg.Add(1)
-
 			go func(m *modules.Module) {
 				m.Output = ""
 
@@ -43,8 +38,8 @@ func (s *Scenario) execute(ctx context.Context, outputter func(string, *modules.
 					go outputter(s, m)
 				}
 
-				stopper <- struct{}{}
-				defer func() { <-stopper }()
+				semaphore <- struct{}{}
+				defer func() { <-semaphore }()
 				defer wg.Done()
 
 				if utility.IsCanceled(ctx) {
@@ -57,18 +52,16 @@ func (s *Scenario) execute(ctx context.Context, outputter func(string, *modules.
 				startFrom := strings.IndexFunc(m.Content,
 					func(r rune) bool { return r == '\n' })
 
-				e := execution.Execute(s.Main+"\n"+m.Content[startFrom+1:],
+				err := execution.Execute(s.Main+"\n"+m.Content[startFrom+1:],
 					ctx,
 					localOutputter)
-				if e != nil {
-					localOutputter(fmt.Sprintf("Module '%s' error: %s\n", m.Name, e.Error()))
+				if err != nil {
+					localOutputter(fmt.Sprintf("Module '%s' error: %s\n", m.Name, err.Error()))
 					return
 				}
 
 			}(m)
 		}
-
 		wg.Wait()
 	}
-
 }

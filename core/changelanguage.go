@@ -1,6 +1,7 @@
 package core
 
 import (
+	"clip/locales"
 	"image/color"
 	"slices"
 
@@ -13,27 +14,27 @@ import (
 
 func (a *ClipWindow) changeLanguageWindow() {
 	a.applyModuleChanges()
-	options := func(langmap map[string][]string) []string {
+	options := func() []string {
 		slice := []string{}
-		for key := range langmap {
-			slice = append(slice, key)
+		for _, l := range a.langs {
+			slice = append(slice, l)
 		}
 		return slice
-	}(a.langmap)
+	}()
 	dropoutMenu := widget.NewSelectEntry(options)
 	langwindow := dialog.NewCustomConfirm(
-		a.langmap[a.modules.CurrentLang][29],
-		a.langmap[a.modules.CurrentLang][30],
-		a.langmap[a.modules.CurrentLang][24],
+		locales.T(a.modules.CurrentLang, "change_language"),
+		locales.T(a.modules.CurrentLang, "apply"),
+		locales.T(a.modules.CurrentLang, "cancel"),
 		container.NewBorder(
 			container.NewVBox(canvas.NewText(
-				a.langmap[a.modules.CurrentLang][31],
+				locales.T(a.modules.CurrentLang, "choose_language"),
 				color.Black),
 				dropoutMenu),
 			nil, nil, nil,
 		),
 		func(b bool) {
-			if slices.Contains(options, dropoutMenu.Text) {
+			if slices.Contains(options, dropoutMenu.Text) && b {
 				a.modules.CurrentLang = dropoutMenu.Text
 				a.fullRefresh()
 			}

@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"clip/encrypter"
 	"clip/errors"
+	"clip/locales"
 	"clip/modules"
 	outputprocessor "clip/outputProcessor"
 	"clip/reporter"
 	st "clip/storage"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,17 +25,24 @@ import (
 
 type FileManager struct {
 	window        fyne.Window
-	langslice     []string
+	lang          string
 	path          string
 	profileExists bool
 	modules       *modules.ClipModules
 }
 
-func NewFileManager(window fyne.Window, langslice []string, path string, profileExists bool) *FileManager {
-	return &FileManager{window: window, langslice: langslice, path: path, profileExists: profileExists}
+type Script struct {
+	Name    string
+	Path    string
+	Content string
+	Chosen  bool
 }
 
-func (f *FileManager) GetProfileType(skip bool, callback func(st.Encoder)) {
+func NewFileManager(lang, path string, window fyne.Window, profileExists bool) *FileManager {
+	return &FileManager{window: window, lang: lang, path: path, profileExists: profileExists}
+}
+
+func (f *FileManager) GetProfileType(errCh chan<- error, skip bool, callback func(st.Encoder)) {
 	if skip {
 		callback(st.NewJson())
 		return
@@ -44,9 +53,9 @@ func (f *FileManager) GetProfileType(skip bool, callback func(st.Encoder)) {
 	})
 
 	d := dialog.NewCustomConfirm(
-		f.langslice[41],
-		f.langslice[23],
-		f.langslice[24],
+		locales.T(f.lang, "choose_output_type"),
+		locales.T(f.lang, "ok"),
+		locales.T(f.lang, "cancel"),
 		container.NewPadded(
 			container.NewBorder(radio, nil, nil, nil),
 		),
@@ -57,7 +66,7 @@ func (f *FileManager) GetProfileType(skip bool, callback func(st.Encoder)) {
 					callback(st.NewJson())
 					return
 				default:
-					dialog.ShowError(errors.UniversalError{ErrorText: f.langslice[40]}, f.window)
+					errCh <- errors.New(errSavingProfile)
 					return
 				}
 			}
@@ -69,28 +78,22 @@ func (f *FileManager) GetProfileType(skip bool, callback func(st.Encoder)) {
 	d.Show()
 }
 
-func (f *FileManager) SaveProfile(enc encrypter.Encrypter, t st.Encoder, mods *modules.ClipModules, callback func(encrypter.Encrypter, bool, string)) {
+func (f *FileManager) SaveProfile(errCh chan<- error, enc encrypter.Encrypter, t st.Encoder, mods *modules.ClipModules, callback func(encrypter.Encrypter, bool, string)) {
 	save := func(path string, enc encrypter.Encrypter, password string) {
 		if err, _ := t.Encode(mods, path); err != nil {
-			dialog.ShowError(
-				errors.UniversalError{ErrorText: f.langslice[40]},
-				f.window,
-			)
+			errCh <- err
 		}
 		if enc != nil {
 			err := enc.Encrypt(path, password)
 			if err != nil {
-				dialog.ShowError(
-					errors.UniversalError{ErrorText: f.langslice[44]},
-					f.window,
-				)
+				errCh <- err
 			}
 		}
 
 	}
 
 	askPasswordAndSave := func(path string, enc encrypter.Encrypter) {
-		f.GetPassword(func(p string) {
+		f.GetPassword(errCh, func(p string) {
 			save(path, enc, p)
 		})
 	}
@@ -104,10 +107,11 @@ func (f *FileManager) SaveProfile(enc encrypter.Encrypter, t st.Encoder, mods *m
 	case false:
 		f.GetEncryptionType(func(e encrypter.Encrypter) {
 			if e == nil {
-				f.SaveProfileAs("", e, t, mods, callback)
+				f.SaveProfileAs(errCh, "", e, t, mods, callback)
+				return
 			}
-			f.GetPassword(func(p string) {
-				f.SaveProfileAs(p, e, t, mods, callback)
+			f.GetPassword(errCh, func(p string) {
+				f.SaveProfileAs(errCh, p, e, t, mods, callback)
 			})
 
 		})
@@ -115,10 +119,11 @@ func (f *FileManager) SaveProfile(enc encrypter.Encrypter, t st.Encoder, mods *m
 
 }
 
-func (f *FileManager) SaveProfileAs(password string, enc encrypter.Encrypter, t st.Encoder, mods *modules.ClipModules, callback func(encrypter.Encrypter, bool, string)) {
+func (f *FileManager) SaveProfileAs(errCh chan<- error, password string, enc encrypter.Encrypter, t st.Encoder, mods *modules.ClipModules, callback func(encrypter.Encrypter, bool, string)) {
 	filesavedialog := dialog.NewFileSave(
 		func(writer fyne.URIWriteCloser, err error) {
 			if err != nil {
+				errCh <- errors.New(errSavingProfile)
 				return
 			}
 
@@ -131,7 +136,7 @@ func (f *FileManager) SaveProfileAs(password string, enc encrypter.Encrypter, t 
 
 			err, path := t.Encode(mods, f.path)
 			if err != nil {
-				dialog.ShowError(errors.UniversalError{ErrorText: f.langslice[40]}, f.window)
+				errCh <- err
 				return
 			}
 
@@ -143,12 +148,7 @@ func (f *FileManager) SaveProfileAs(password string, enc encrypter.Encrypter, t 
 			if enc != nil {
 				err := enc.Encrypt(path, password)
 				if err != nil {
-					dialog.ShowError(
-						errors.UniversalError{
-							ErrorText: f.langslice[44],
-						},
-						f.window,
-					)
+					errCh <- err
 					return
 				}
 			}
@@ -162,14 +162,14 @@ func (f *FileManager) SaveProfileAs(password string, enc encrypter.Encrypter, t 
 	filesavedialog.Show()
 }
 
-func (f *FileManager) LoadProfile(callback func(modules.ClipModules, string, encrypter.Encrypter)) {
+func (f *FileManager) LoadProfile(errCh chan<- error, callback func(modules.ClipModules, string, encrypter.Encrypter)) {
 	var mods modules.ClipModules
 	var d st.Decoder
 	fileOpenDialog := dialog.NewFileOpen(
 		func(reader fyne.URIReadCloser, err error) {
 
 			if err != nil {
-				dialog.ShowError(errors.UniversalError{ErrorText: f.langslice[39]}, f.window)
+				errCh <- errors.New(errReadingProfile)
 				return
 			}
 
@@ -183,53 +183,34 @@ func (f *FileManager) LoadProfile(callback func(modules.ClipModules, string, enc
 
 			fileData, err := os.ReadFile(f.path)
 			if err != nil {
-				dialog.ShowError(errors.UniversalError{ErrorText: f.langslice[39]}, f.window)
+				errCh <- errors.New(errReadingProfile)
 				return
 			}
 
-			ext := filepath.Ext(f.path)
-
-			switch ext {
-			case ".json":
-				d = st.NewJson()
-			default:
-				dialog.ShowError(errors.UniversalError{ErrorText: f.langslice[39]}, f.window)
-				return
-			}
 			switch f.EncryptionChecker(fileData) {
 			case false:
 				err = d.Decode(&mods, fileData)
 				if err != nil {
-					dialog.ShowError(errors.UniversalError{ErrorText: f.langslice[39]}, f.window)
+					errCh <- err
 					return
 				}
 
 				callback(mods, f.path, nil)
 				return
 			case true:
-				f.GetPassword(func(password string) {
-					if password == "" {
-						dialog.ShowError(
-							errors.UniversalError{
-								ErrorText: f.langslice[46],
-							},
-							f.window,
-						)
-						return
-					}
+				f.GetPassword(errCh, func(password string) {
 					enc, decrypted, err := f.DecryptFile(fileData, password)
 					if err != nil {
-						dialog.ShowError(err, f.window)
+						errCh <- err
 						return
 					}
 
 					err = d.Decode(&mods, decrypted)
 					if err != nil {
-						dialog.ShowError(errors.UniversalError{ErrorText: f.langslice[39]}, f.window)
+						errCh <- err
 						return
 					}
 					callback(mods, f.path, enc)
-
 				})
 			}
 		},
@@ -254,16 +235,16 @@ func (f *FileManager) EncryptionChecker(fileData []byte) bool {
 	return isEncrypted
 }
 
-func (f *FileManager) GetReportType(callback func(reporter.Reporter)) {
+func (f *FileManager) GetReportType(errCh chan<- error, db outputprocessor.DB, callback func(reporter.Reporter, outputprocessor.DB)) {
 	var selected string
 	radio := widget.NewRadioGroup([]string{"PDF"}, func(value string) {
 		selected = value
 	})
 
 	d := dialog.NewCustomConfirm(
-		f.langslice[41],
-		f.langslice[23],
-		f.langslice[24],
+		locales.T(f.lang, "choose_output_type"),
+		locales.T(f.lang, "ok"),
+		locales.T(f.lang, "cancel"),
 		container.NewPadded(
 			container.NewBorder(radio, nil, nil, nil),
 		),
@@ -271,10 +252,10 @@ func (f *FileManager) GetReportType(callback func(reporter.Reporter)) {
 			if confirm {
 				switch selected {
 				case "PDF":
-					callback(reporter.NewPDF())
+					callback(reporter.NewPDF(), db)
 					return
 				default:
-					dialog.ShowError(errors.UniversalError{ErrorText: f.langslice[28]}, f.window)
+					errCh <- errors.New("report_file_type_error")
 					return
 				}
 			}
@@ -293,9 +274,9 @@ func (f *FileManager) GetDBType(ctx context.Context, callback func(outputprocess
 	})
 
 	d := dialog.NewCustomConfirm(
-		f.langslice[48],
-		f.langslice[23],
-		f.langslice[24],
+		locales.T(f.lang, "choose_vuln_db"),
+		locales.T(f.lang, "ok"),
+		locales.T(f.lang, "cancel"),
 		container.NewPadded(
 			container.NewBorder(radio, nil, nil, nil),
 		),
@@ -310,14 +291,14 @@ func (f *FileManager) GetDBType(ctx context.Context, callback func(outputprocess
 		f.window,
 	)
 
-	d.Resize(fyne.NewSize(300, 200))
+	d.Resize(fyne.NewSize(200, 200))
 	d.Show()
 }
 
-func (f *FileManager) ReportСreationWindow(
+func (f *FileManager) ReportCreationWindow(
 	db outputprocessor.DB,
 	r reporter.Reporter,
-	makePDFFor []*modules.Module) {
+	callback func(string)) {
 	filesaveDialog := dialog.NewFileSave(
 		func(writer fyne.URIWriteCloser, err error) {
 			go func() {
@@ -327,44 +308,12 @@ func (f *FileManager) ReportСreationWindow(
 
 				path := writer.URI().Path()
 				ext := r.GetFileType()
-				if filepath.Ext(path) != ext {
-					path = strings.TrimSuffix(path, filepath.Ext(path))
-					path += ext
-					defer os.Remove(path)
-				}
 
 				if filepath.Base(path) == ext {
 					path = time.Now().Format("02.01.2006 15-04-05") + ext
 				}
 
-				progressChan := make(chan float64)
-				defer close(progressChan)
-
-				errChan := make(chan error)
-				defer close(errChan)
-
-				go r.CreateReport(db, makePDFFor, path, progressChan, errChan)
-
-				progressBar := widget.NewProgressBar()
-				progressWindow := dialog.NewCustomWithoutButtons(
-					"Creating PDF",
-					progressBar,
-					f.window,
-				)
-				progressWindow.Show()
-				for progressBar.Value < 1 {
-					select {
-					case p := <-progressChan:
-						fyne.DoAndWait(func() {
-							progressBar.SetValue(p)
-						})
-					case <-errChan:
-						progressWindow.Hide()
-						fyne.DoAndWait(func() { dialog.ShowError(errors.UniversalError{ErrorText: f.langslice[28]}, f.window) })
-						return
-					}
-				}
-				fyne.Do(func() { progressWindow.Hide() })
+				go callback(path)
 			}()
 		}, f.window)
 	filesaveDialog.SetFilter(storage.NewExtensionFileFilter([]string{".pdf"}))
@@ -375,14 +324,14 @@ func (f *FileManager) ReportСreationWindow(
 func (f *FileManager) GetEncryptionType(callback func(encrypter.Encrypter)) {
 	var selected string
 	var enc encrypter.Encrypter
-	radio := widget.NewRadioGroup([]string{"AES-GCM", f.langslice[47]}, func(value string) {
+	radio := widget.NewRadioGroup([]string{"AES-GCM", locales.T(f.lang, "no_encryption")}, func(value string) {
 		selected = value
 	})
 
 	d := dialog.NewCustomConfirm(
-		f.langslice[42],
-		f.langslice[23],
-		f.langslice[24],
+		locales.T(f.lang, "choose_encryption"),
+		locales.T(f.lang, "ok"),
+		locales.T(f.lang, "cancel"),
 		container.NewPadded(
 			container.NewBorder(radio, nil, nil, nil),
 		),
@@ -391,6 +340,8 @@ func (f *FileManager) GetEncryptionType(callback func(encrypter.Encrypter)) {
 				switch selected {
 				case "AES-GCM":
 					enc = encrypter.NewAES256SCRYPT()
+				default:
+					enc = nil
 				}
 				callback(enc)
 			}
@@ -402,12 +353,12 @@ func (f *FileManager) GetEncryptionType(callback func(encrypter.Encrypter)) {
 	d.Show()
 }
 
-func (f *FileManager) GetPassword(callback func(string)) {
+func (f *FileManager) GetPassword(errCh chan<- error, callback func(string)) {
 	input := widget.NewPasswordEntry()
 	passwordDialog := dialog.NewCustomConfirm(
-		f.langslice[43],
-		f.langslice[23],
-		f.langslice[24],
+		locales.T(f.lang, "enter_password"),
+		locales.T(f.lang, "ok"),
+		locales.T(f.lang, "cancel"),
 		container.NewPadded(
 			container.NewBorder(
 				input, nil, nil, nil,
@@ -417,12 +368,8 @@ func (f *FileManager) GetPassword(callback func(string)) {
 				if input.Text != "" {
 					callback(input.Text)
 				} else {
-					dialog.ShowError(
-						errors.UniversalError{
-							ErrorText: f.langslice[44],
-						},
-						f.window,
-					)
+					errCh <- errors.New(errPasswordNotProvided)
+					return
 				}
 
 			}
@@ -433,7 +380,7 @@ func (f *FileManager) GetPassword(callback func(string)) {
 
 func (f *FileManager) DecryptFile(data []byte, password string) (encrypter.Encrypter, []byte, error) {
 	if len(data) < 7 {
-		return nil, nil, errors.UniversalError{ErrorText: f.langslice[44]}
+		return nil, nil, errors.New(errInvalidData)
 	}
 
 	if !bytes.Equal(data[:4], []byte("CFG1")) {
@@ -442,7 +389,7 @@ func (f *FileManager) DecryptFile(data []byte, password string) (encrypter.Encry
 
 	version := data[4]
 	if version != 1 {
-		return nil, nil, errors.UniversalError{ErrorText: f.langslice[44]}
+		return nil, nil, errors.New(errInvalidData)
 	}
 
 	flags := data[5]
@@ -459,6 +406,127 @@ func (f *FileManager) DecryptFile(data []byte, password string) (encrypter.Encry
 		data, err := cipher.Decrypt(payload, password)
 		return cipher.(encrypter.Encrypter), data, err
 	default:
-		return nil, nil, errors.UniversalError{ErrorText: f.langslice[44]}
+		return nil, nil, errors.New(errUnknownCipher)
 	}
+}
+
+func (f *FileManager) LoadScripts(errCh chan<- error, callback func([]*Script)) {
+	dialog.ShowFolderOpen(func(list fyne.ListableURI, err error) {
+		if err != nil || list == nil {
+			errCh <- errors.New(errOpeningFolder)
+			return
+		}
+
+		files, err := list.List()
+		if err != nil {
+			errCh <- errors.New(errListingFiles)
+			return
+		}
+
+		scripts := make([]*Script, 0, len(files))
+		for _, f := range files {
+
+			ext := strings.ToLower(filepath.Ext(f.Name()))
+			if ext != ".sh" && ext != ".txt" && ext != ".bat" && ext != ".ps" {
+				continue
+			}
+
+			scripts = append(scripts, &Script{
+				Name: f.Name(),
+				Path: f.Path(),
+			})
+		}
+		callback(scripts)
+	}, f.window)
+}
+
+func (f *FileManager) OpenScriptPicker(
+	files []*Script,
+	callback func(name, content string),
+) {
+	var picker dialog.Dialog
+
+	list := widget.NewList(
+		func() int {
+			return len(files)
+		},
+		func() fyne.CanvasObject {
+			return container.NewHBox(
+				widget.NewCheck("", nil),
+				widget.NewLabel(""),
+			)
+		},
+		func(i widget.ListItemID, o fyne.CanvasObject) {
+			row := o.(*fyne.Container)
+
+			check := row.Objects[0].(*widget.Check)
+			label := row.Objects[1].(*widget.Label)
+
+			label.SetText(files[i].Name)
+
+			check.OnChanged = nil
+			check.SetChecked(files[i].Chosen)
+
+			check.OnChanged = func(v bool) {
+				files[i].Chosen = v
+			}
+		},
+	)
+
+	selectAllBtn := widget.NewButton(locales.T(f.lang, "select_all"), func() {
+		for _, file := range files {
+			file.Chosen = true
+		}
+		list.Refresh()
+	})
+
+	clearBtn := widget.NewButton(locales.T(f.lang, "clear"), func() {
+		for _, file := range files {
+			file.Chosen = false
+		}
+		list.Refresh()
+	})
+
+	controls := container.NewHBox(selectAllBtn, clearBtn)
+	content := container.NewBorder(nil, controls, nil, nil, list)
+
+	picker = dialog.NewCustomConfirm(
+		locales.T(f.lang, "choose_scripts"),
+		locales.T(f.lang, "load_chosen"),
+		locales.T(f.lang, "cancel"),
+		content,
+		func(b bool) {
+			if b {
+				for _, file := range files {
+					if !file.Chosen {
+						continue
+					}
+
+					uri, err := storage.ParseURI("file://" + file.Path)
+					if err != nil {
+						continue
+					}
+
+					rc, err := storage.Reader(uri)
+					if err != nil {
+						continue
+					}
+
+					data, err := io.ReadAll(rc)
+					rc.Close()
+					if err != nil {
+						continue
+					}
+
+					callback(file.Name, string(data))
+				}
+
+				picker.Hide()
+			}
+		},
+		f.window,
+	)
+
+	picker.Resize(fyne.NewSize(600, 400))
+	picker.Show()
 }

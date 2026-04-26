@@ -1,11 +1,9 @@
 package core
 
 import (
-	"clip/modules"
+	"clip/locales"
 
 	"image/color"
-	"slices"
-	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -21,35 +19,21 @@ func (a *ClipWindow) editModuleName() {
 	scroll := container.NewVScroll(input)
 	scroll.ScrollToBottom()
 	addmoduleDialog := dialog.NewCustomConfirm(
-		a.langmap[a.modules.CurrentLang][22],
-		a.langmap[a.modules.CurrentLang][23],
-		a.langmap[a.modules.CurrentLang][24],
+		locales.T(a.modules.CurrentLang, "alter_module_name"),
+		locales.T(a.modules.CurrentLang, "ok"),
+		locales.T(a.modules.CurrentLang, "cancel"),
 		container.NewPadded(
 			container.NewBorder(
-				canvas.NewText(a.langmap[a.modules.CurrentLang][25], color.Black),
+				canvas.NewText(locales.T(a.modules.CurrentLang, "enter_new_module_name"), color.Black),
 				nil, nil, nil, scroll,
 			),
 		), func(b bool) {
-			editdialog(a, input, b)
+			if b && input.Text != "" {
+				a.selectedModule.AlterName(input.Text)
+				a.refreshModuleGui()
+				a.fullRefresh()
+			}
 		}, a.Window)
 	addmoduleDialog.Resize(fyne.NewSize(500, 300))
 	addmoduleDialog.Show()
-}
-
-func editdialog(a *ClipWindow, input *widget.Entry, b bool) {
-	if b {
-		if input.Text == "" {
-			return
-		}
-		m := &modules.Module{
-			Name:    strings.TrimSpace(input.Text),
-			Content: a.selectedModule.Content,
-			Output:  a.selectedModule.Output,
-		}
-		a.modules.ChildModules[slices.Index(a.modules.ChildModules, a.selectedModule)] = m
-		a.selectModule(m)
-		a.refreshModuleGui()
-	} else {
-		return
-	}
 }

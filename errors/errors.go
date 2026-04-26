@@ -1,12 +1,32 @@
 package errors
 
-import "fmt"
+type Code string
 
-type UniversalError struct {
-	ErrorText string
-	Module    string
+type Place string
+
+type Error struct {
+	Code  Code
+	Place Place
+	Cause error
 }
 
-func (f UniversalError) Error() string {
-	return fmt.Sprintf("%s %s", f.ErrorText, f.Module)
+func (e *Error) Error() string {
+	return string(e.Code)
+}
+
+func New(code Code) *Error {
+	return &Error{
+		Code: code,
+	}
+}
+
+func NewWithPlace(code Code, place Place) *Error {
+	return &Error{
+		Code:  code,
+		Place: place,
+	}
+}
+
+func (e *Error) Unwrap() error {
+	return e.Cause
 }

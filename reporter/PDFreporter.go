@@ -1,6 +1,7 @@
 package reporter
 
 import (
+	"clip/errors"
 	"clip/modules"
 	outputprocessor "clip/outputProcessor"
 	"clip/utility"
@@ -59,12 +60,11 @@ func (p *PDF) CreateReport(
 			pdf.MultiCell(0, 10, strings.Join(enumed, "\n"), "0", "L", false)
 		}
 		progress <- float64(i+1)/length - 0.01
-
 	}
 
 	err := pdf.OutputFileAndClose(path)
 	if err != nil {
-		errChan <- err
+		errChan <- errors.New(errWritingToFile)
 	}
 	progress <- 1
 }

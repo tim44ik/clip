@@ -72,25 +72,14 @@ var NVDlimiter = rate.NewLimiter(rate.Every((time.Duration(rand.Intn(1000)+6000)
 func NewNVDClient(ctx context.Context) *NVDClient {
 	return &NVDClient{
 		ctx:  ctx,
-		http: &http.Client{Timeout: 10 * time.Second},
+		http: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
 func (n *NVDClient) Lookup(prod string) ([]string, error) {
-	NVDlimiter.Wait(n.ctx)
-
-	matchStringQuery := fmt.Sprintf("https://services.nvd.nist.gov/rest/json/cpematch/2.0?matchStringSearch=cpe:2.3:*:*:%s", prod)
-
-	resp, err := n.http.Get(matchStringQuery)
-
+	body, err := n.connectAndFetch("https://services.nvd.nist.gov/rest/json/cpematch/2.0?matchStringSearch=cpe:2.3:*:*:" + prod)
 	if err != nil {
 		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("%s", string(body))
 	}
 
 	var parsed SoftVerLookup
@@ -116,22 +105,10 @@ func (n *NVDClient) Lookup(prod string) ([]string, error) {
 }
 
 func (n *NVDClient) Fetch(link, subject string) ([]*CVEInfo, error) {
-	NVDlimiter.Wait(n.ctx)
-
-	url := link + subject
-
-	resp, err := n.http.Get(url)
-
+	body, err := n.connectAndFetch(link + subject)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("NVD: %s", string(body))
-	}
-
 	var parsed NVDResponse
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return nil, err
@@ -179,9 +156,32 @@ func (n *NVDClient) Fetch(link, subject string) ([]*CVEInfo, error) {
 				info.Description = r.Value
 			}
 		}
-
 		infoSlice = append(infoSlice, info)
 	}
-
 	return infoSlice, nil
+}
+
+func (n *NVDClient) connectAndFetch(link string) ([]byte, error) {
+	NVDlimiter.Wait(n.ctx)
+
+	req, err := http.NewRequestWithContext(n.ctx, "GET", link, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := n.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("NVD: %s", string(body))
+	}
+
+	return body, nil
 }
