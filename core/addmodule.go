@@ -57,22 +57,29 @@ func (a *ClipWindow) createModuleButton(m *modules.Module) fyne.Widget {
 	if len(m.Name) > 18 && !strings.Contains(m.Name, "\n") {
 		return widget.NewButton(func(s string) string {
 			s = strings.TrimSpace(s)
-			if len(s) > 18 {
+			runeS := []rune(s)
+			if len(runeS) > 18 {
 				f := 0
-				for i := range s {
-					if s[i] == '+' || s[i] == '-' || s[i] == '_' || s[i] == '=' || s[i] == ' ' {
+				for i := range runeS {
+					if runeS[i] == '+' || runeS[i] == '-' || runeS[i] == '_' || runeS[i] == '=' || runeS[i] == ' ' {
 						f = i
 					}
 					if i%18 == 0 && f != 0 {
-						s = s[:f] + "\n" + s[f:]
+						sb := string(runeS[:f])
+						sa := string(runeS[f:])
+						s = sb + "\n" + sa
+						runeS = []rune(s)
 						continue
 					}
 					if i%18 == 0 && i != 0 {
-						s = s[:i] + "\n" + s[i:]
+						sb := string(runeS[:i])
+						sa := string(runeS[i:])
+						s = sb + "\n" + sa
+						runeS = []rune(s)
 					}
 				}
 			}
-			return s
+			return string(runeS)
 		}(m.Name), func() { a.selectModule(m) })
 	}
 	return widget.NewButton(strings.TrimSpace(m.Name),

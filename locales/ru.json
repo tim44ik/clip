@@ -58,7 +58,7 @@
   { "id": "gcm_generation_error", "translation":"Ошибка генерации gcm блока"},
   { "id": "nonce_generation_error", "translation":"Ошибка генерации блока неповторяющихся чисел"},
   { "id": "write_error", "translation":"Ошибка при записи в файл"},
-  { "id": "load_script", "translation":"Загрузить скрипт"},
+  { "id": "load_script", "translation":"Загрузить скрипты"},
   { "id": "file_read_error", "translation":"Ошибка чтения файла"},
   { "id": "open_folder_error", "translation":"Ошибка открытия папки"},
   { "id": "listing_files_error", "translation":"Ошибка перечисления файлов"},
