@@ -12,4 +12,5 @@ const (
 	errReadingFile         errors.Code = "file_read_error"
 	errOpeningFolder       errors.Code = "open_folder_error"
 	errListingFiles        errors.Code = "listing_files_error"
+	errReportType          errors.Code = "report_file_type_error"
 )

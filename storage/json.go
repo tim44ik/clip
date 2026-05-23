@@ -10,17 +10,12 @@ import (
 	"strings"
 )
 
-type Json struct {
-}
+type jsonProfile struct{}
 
-func NewJson() *Json {
-	return &Json{}
-}
-
-func (j *Json) GetFileType() string {
+func (j *jsonProfile) GetFileType() string {
 	return ".json"
 }
-func (j *Json) Encode(mods *modules.ClipModules, path string) (error, string) {
+func (j *jsonProfile) Encode(mods *modules.ClipModules, path string) (error, string) {
 	path = strings.TrimSuffix(path, filepath.Ext(path))
 	path += ".json"
 
@@ -39,7 +34,7 @@ func (j *Json) Encode(mods *modules.ClipModules, path string) (error, string) {
 	return nil, path
 }
 
-func (j *Json) Decode(mods *modules.ClipModules, fileData []byte) error {
+func (j *jsonProfile) Decode(mods *modules.ClipModules, fileData []byte) error {
 
 	decoder := json.NewDecoder(bytes.NewBuffer(fileData))
 	if err := decoder.Decode(mods); err != nil {

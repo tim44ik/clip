@@ -1,20 +1,22 @@
 package outputprocessor
 
 import (
-	"clip/utility"
 	"fmt"
 	"regexp"
-	"slices"
-	"strconv"
 	"strings"
 	"sync"
 )
 
+type Processor struct {
+	cache    map[string]*Order
+	software []*Order
+	cve      []*Order
+}
+
 type Order struct {
-	name  []string
-	lines []int
-	cpe   []string
-	cve   []*CVEInfo
+	name []string
+	cpe  []string
+	cve  []*CVEInfo
 }
 
 type CVEInfo struct {
@@ -27,23 +29,22 @@ type CVEInfo struct {
 	Links       []string
 }
 
-type DB interface {
-	Lookup(string) ([]string, error)
-	Fetch(string, string) ([]*CVEInfo, error)
+func NewProcessor(cache map[string]*Order, software, cve []*Order) *Processor {
+	return &Processor{cache: cache, software: software, cve: cve}
 }
 
-func ProcessOutput(db DB, output string) string {
-	outputListed := utility.EnumLines(output)
+func (p *Processor) ProcessOutput(db DB, output string) {
+	outputDivided := strings.Split(output, "\n")
 
-	softByLine, cvesByLine := FindCVEs(outputListed)
+	p.findCVEs(outputDivided)
 
-	maxGoroutines := 5
+	maxGoroutines := db.GetMaxRate()
 	sem := make(chan struct{}, maxGoroutines)
 	defer close(sem)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 
-	for _, soft := range softByLine {
+	for _, soft := range p.software {
 		wg.Add(1)
 		sem <- struct{}{}
 		go func() {
@@ -61,7 +62,7 @@ func ProcessOutput(db DB, output string) string {
 
 	wg.Wait()
 
-	for _, soft := range softByLine {
+	for _, soft := range p.software {
 		if soft.cpe == nil {
 			continue
 		}
@@ -82,9 +83,14 @@ func ProcessOutput(db DB, output string) string {
 				}
 
 				for _, cve := range resp {
-					if seenCVEs[cve.ID] == nil {
+					if _, ok := seenCVEs[cve.ID]; !ok {
 						mu.Lock()
 						seenCVEs[cve.ID] = cve
+						mu.Unlock()
+					}
+					if _, ok := p.cache[cve.ID]; !ok {
+						mu.Lock()
+						p.cache[cve.ID].cve = append(p.cache[cve.ID].cve, cve)
 						mu.Unlock()
 					}
 				}
@@ -98,7 +104,7 @@ func ProcessOutput(db DB, output string) string {
 		}
 	}
 
-	for _, cve := range cvesByLine {
+	for _, cve := range p.cve {
 		wg.Add(1)
 
 		sem <- struct{}{}
@@ -117,82 +123,60 @@ func ProcessOutput(db DB, output string) string {
 	}
 
 	wg.Wait()
+}
 
-	if len(softByLine) != 0 {
-		if !slices.Contains(outputListed, "\nProcessing results:") {
-			outputListed = append(outputListed, "\nProcessing results:")
-		}
-
-		for _, soft := range softByLine {
+func (p *Processor) PrintResults() string {
+	output := []string{"\nProcessing results:"}
+	if len(p.software) != 0 {
+		for _, soft := range p.software {
 			if soft.cve != nil {
-				outputListed = append(outputListed,
+				output = append(output,
 					fmt.Sprintf(
-						"\n%s\n    Found in lines: %s\n    Known CVE(s) related to that:",
-						soft.name[0],
-						func(i []int) string {
-							str := ""
-							for _, i := range soft.lines {
-								str += strconv.Itoa(i) + ", "
-							}
-							return str[:len(str)-2]
-						}(soft.lines)))
+						"\n%s\nKnown CVE related to that:",
+						soft.name[0]))
 
 				for _, cve := range soft.cve {
-					outputListed = append(outputListed, "\n    "+cve.ID)
+					output = append(output, "\n    "+cve.ID)
 
-					outputListed = AppendOutput(outputListed, cve)
+					output = appendOutput(output, cve)
 				}
 			}
 		}
 	}
 
-	if len(cvesByLine) != 0 {
-		if !slices.Contains(outputListed, "\nProcessing results:") {
-			outputListed = append(outputListed, "\nProcessing results:")
-		}
-
-		for _, cveStruct := range cvesByLine {
+	if len(p.cve) != 0 {
+		for _, cveStruct := range p.cve {
 			if cveStruct.cve != nil {
-				outputListed = append(outputListed, fmt.Sprintf(
-					"\n%s\nFound in lines: %s",
-					cveStruct.name[0],
-					func(i []int) string {
-						str := ""
-						for _, i := range cveStruct.lines {
-							str += strconv.Itoa(i) + ", "
-						}
-						return str[:len(str)-2]
-					}(cveStruct.lines)))
+				output = append(output, fmt.Sprintf(
+					"\n%s",
+					cveStruct.name[0]))
 
-				outputListed = AppendOutput(outputListed, cveStruct.cve[0])
+				output = appendOutput(output, cveStruct.cve[0])
 			}
 		}
 	}
 
-	return strings.Join(outputListed, "\n")
+	return strings.Join(output, "\n")
 }
 
-func FindCVEs(lines []string) (cve, software []*Order) {
+func (p *Processor) findCVEs(lines []string) {
 	reCve := regexp.MustCompile(`CVE-\d{4}-\d{4,}`)
 	reSoft := regexp.MustCompile(`(?i)(?:version)|(?:ver.)|(?:CVE\-\d{4}\-\d{4,})|(?:port[|\s:\\/]*\d{1,5})|(?:ping[\s:]+\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?:\:\d{1,5})*)|([\w\-]+(?:\s\d+)?)(?:\s*(?:[:\\\/\s\-\|]+|ver\.|v\.|version(?:\s*(?:[\\/:|]*)\s*))\s*)((?:(?:\d+(?:\.\d+[a-z]*\d*)+(?:-\d(?:\.\d)+)?)|\d+[a-z]?\d*)(?:[\-\\\/]?dev|[\-\\\/]?beta|[\-\\\/]?alpha)?)`)
 
-	softMap := map[string]*Order{}
 	softKeys := []string{}
-	cveMap := map[string]*Order{}
 	cveKeys := []string{}
 
-	for i, line := range lines {
+	for _, line := range lines {
 		foundCve := reCve.FindAllString(line, -1)
 		foundSoft := reSoft.FindAllStringSubmatch(line, -1)
 
 		for _, f := range foundCve {
-			cve, ok := cveMap[f]
+			cve, ok := p.cache[f]
 			if !ok {
 				cve = &Order{name: []string{f}}
 				cveKeys = append(cveKeys, f)
 			}
-			cve.lines = append(cve.lines, i+1)
-			cveMap[f] = cve
+			p.cache[f] = cve
 		}
 
 		for _, f := range foundSoft {
@@ -200,28 +184,25 @@ func FindCVEs(lines []string) (cve, software []*Order) {
 				continue
 			}
 
-			soft, ok := softMap[f[0]]
+			soft, ok := p.cache[f[0]]
 			if !ok {
 				soft = &Order{name: []string{f[0], f[1], f[2]}}
 				softKeys = append(softKeys, f[0])
 			}
-			soft.lines = append(soft.lines, i+1)
-			softMap[f[0]] = soft
+			p.cache[f[0]] = soft
 		}
 	}
 
 	for _, key := range cveKeys {
-		cve = append(cve, cveMap[key])
+		p.cve = append(p.cve, p.cache[key])
 	}
 
 	for _, key := range softKeys {
-		software = append(software, softMap[key])
+		p.software = append(p.software, p.cache[key])
 	}
-
-	return software, cve
 }
 
-func AppendOutput(outputListed []string, cve *CVEInfo) []string {
+func appendOutput(outputListed []string, cve *CVEInfo) []string {
 	outputListed = append(outputListed, fmt.Sprintf(
 		"\n    Description:\n%s",
 		cve.Description,

@@ -63,17 +63,15 @@ type SoftVerLookup struct {
 }
 
 type NVDClient struct {
-	ctx  context.Context
-	http *http.Client
+	maxRate int
+	ctx     context.Context
+	http    *http.Client
 }
 
 var NVDlimiter = rate.NewLimiter(rate.Every((time.Duration(rand.Intn(1000)+6000))*time.Millisecond), 1)
 
-func NewNVDClient(ctx context.Context) *NVDClient {
-	return &NVDClient{
-		ctx:  ctx,
-		http: &http.Client{Timeout: 30 * time.Second},
-	}
+func (n *NVDClient) GetMaxRate() int {
+	return n.maxRate
 }
 
 func (n *NVDClient) Lookup(prod string) ([]string, error) {

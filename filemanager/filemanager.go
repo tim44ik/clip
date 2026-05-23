@@ -43,12 +43,18 @@ func NewFileManager(lang, path string, window fyne.Window, profileExists bool) *
 }
 
 func (f *FileManager) GetProfileType(errCh chan<- error, skip bool, callback func(st.Encoder)) {
+	var enc st.Encoder
 	if skip {
-		callback(st.NewJson())
+		enc = st.NewEncoder(filepath.Ext(f.path))
+		if enc == nil {
+			errCh <- errors.New(errSavingProfile)
+			return
+		}
+		callback(enc)
 		return
 	}
 	var selected string
-	radio := widget.NewRadioGroup([]string{"JSON"}, func(value string) {
+	radio := widget.NewRadioGroup([]string{".json"}, func(value string) {
 		selected = value
 	})
 
@@ -61,14 +67,12 @@ func (f *FileManager) GetProfileType(errCh chan<- error, skip bool, callback fun
 		),
 		func(confirm bool) {
 			if confirm {
-				switch selected {
-				case "JSON":
-					callback(st.NewJson())
-					return
-				default:
+				enc = st.NewEncoder(selected)
+				if enc == nil {
 					errCh <- errors.New(errSavingProfile)
 					return
 				}
+				callback(enc)
 			}
 		},
 		f.window,
@@ -187,6 +191,11 @@ func (f *FileManager) LoadProfile(errCh chan<- error, callback func(modules.Clip
 				return
 			}
 
+			d = st.NewDecoder(reader.URI().Extension())
+			if d == nil {
+				errCh <- errors.New(errReadingProfile)
+			}
+
 			switch f.EncryptionChecker(fileData) {
 			case false:
 				err = d.Decode(&mods, fileData)
@@ -237,7 +246,8 @@ func (f *FileManager) EncryptionChecker(fileData []byte) bool {
 
 func (f *FileManager) GetReportType(errCh chan<- error, db outputprocessor.DB, callback func(reporter.Reporter, outputprocessor.DB)) {
 	var selected string
-	radio := widget.NewRadioGroup([]string{"PDF"}, func(value string) {
+	var rp reporter.Reporter
+	radio := widget.NewRadioGroup([]string{".pdf"}, func(value string) {
 		selected = value
 	})
 
@@ -250,14 +260,12 @@ func (f *FileManager) GetReportType(errCh chan<- error, db outputprocessor.DB, c
 		),
 		func(confirm bool) {
 			if confirm {
-				switch selected {
-				case "PDF":
-					callback(reporter.NewPDF(), db)
-					return
-				default:
-					errCh <- errors.New("report_file_type_error")
+				rp = reporter.NewReporter(selected)
+				if rp == nil {
+					errCh <- errors.New(errReportType)
 					return
 				}
+				callback(rp, db)
 			}
 		},
 		f.window,
@@ -269,6 +277,7 @@ func (f *FileManager) GetReportType(errCh chan<- error, db outputprocessor.DB, c
 
 func (f *FileManager) GetDBType(ctx context.Context, callback func(outputprocessor.DB)) {
 	var selected string
+	var chosenDB outputprocessor.DB
 	radio := widget.NewRadioGroup([]string{"NVD"}, func(value string) {
 		selected = value
 	})
@@ -282,10 +291,11 @@ func (f *FileManager) GetDBType(ctx context.Context, callback func(outputprocess
 		),
 		func(confirm bool) {
 			if confirm {
-				switch selected {
-				case "NVD":
-					callback(outputprocessor.NewNVDClient(ctx))
+				chosenDB = outputprocessor.NewDB(selected, ctx)
+				if chosenDB == nil {
+					return
 				}
+				callback(chosenDB)
 			}
 		},
 		f.window,
@@ -324,7 +334,7 @@ func (f *FileManager) ReportCreationWindow(
 func (f *FileManager) GetEncryptionType(callback func(encrypter.Encrypter)) {
 	var selected string
 	var enc encrypter.Encrypter
-	radio := widget.NewRadioGroup([]string{"AES-GCM", locales.T(f.lang, "no_encryption")}, func(value string) {
+	radio := widget.NewRadioGroup([]string{"AES256", locales.T(f.lang, "no_encryption")}, func(value string) {
 		selected = value
 	})
 
@@ -337,12 +347,7 @@ func (f *FileManager) GetEncryptionType(callback func(encrypter.Encrypter)) {
 		),
 		func(confirm bool) {
 			if confirm {
-				switch selected {
-				case "AES-GCM":
-					enc = encrypter.NewAES256SCRYPT()
-				default:
-					enc = nil
-				}
+				enc = encrypter.NewEncrypter(selected)
 				callback(enc)
 			}
 		},
@@ -400,14 +405,14 @@ func (f *FileManager) DecryptFile(data []byte, password string) (encrypter.Encry
 		return nil, payload, nil
 	}
 	var cipher encrypter.Decrypter
-	switch cipherID {
-	case 1:
-		cipher = encrypter.NewAES256SCRYPT()
-		data, err := cipher.Decrypt(payload, password)
-		return cipher.(encrypter.Encrypter), data, err
-	default:
+
+	cipher = encrypter.NewDecrypter(int(cipherID))
+	if cipher == nil {
 		return nil, nil, errors.New(errUnknownCipher)
 	}
+	data, err := cipher.Decrypt(payload, password)
+	return cipher.(encrypter.Encrypter), data, err
+
 }
 
 func (f *FileManager) LoadScripts(errCh chan<- error, callback func([]*Script)) {

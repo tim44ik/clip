@@ -1,7 +1,7 @@
 package main
 
 import (
-	"clip/core"
+	"clip/frontend"
 	"clip/theme"
 	"os"
 
@@ -18,5 +18,5 @@ func main() {
 	}
 	app.NewWithID("123")
 	fyne.CurrentApp().Settings().SetTheme(theme.BlackTextTheme{})
-	core.CreateWindow().Window.ShowAndRun()
+	frontend.CreateWindow().Window.ShowAndRun()
 }
