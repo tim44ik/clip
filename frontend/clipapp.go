@@ -1,15 +1,15 @@
 package frontend
 
 import (
-	"clip/encrypter"
+	"clip/engine/scenario"
 	appErrors "clip/errors"
-	"clip/filemanager"
+	"clip/fileprocessors/encrypter"
+	"clip/fileprocessors/filemanager"
+	outputprocessor "clip/fileprocessors/outputProcessor"
+	"clip/fileprocessors/reporter"
+	st "clip/fileprocessors/storage"
 	"clip/locales"
 	"clip/modules"
-	outputprocessor "clip/outputProcessor"
-	"clip/reporter"
-	"clip/scenario"
-	st "clip/storage"
 	"clip/utility"
 	"context"
 	_ "embed"

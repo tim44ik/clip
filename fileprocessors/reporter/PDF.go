@@ -2,8 +2,8 @@ package reporter
 
 import (
 	"clip/errors"
+	outputprocessor "clip/fileprocessors/outputProcessor"
 	"clip/modules"
-	outputprocessor "clip/outputProcessor"
 	_ "embed"
 
 	"github.com/phpdave11/gofpdf"

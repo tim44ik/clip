@@ -1,8 +1,8 @@
 package scenario
 
 import (
+	r "clip/engine/runtime"
 	"clip/modules"
-	r "clip/runtime"
 	"clip/utility"
 	"context"
 	"fmt"

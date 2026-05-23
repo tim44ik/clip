@@ -2,13 +2,13 @@ package filemanager
 
 import (
 	"bytes"
-	"clip/encrypter"
 	"clip/errors"
+	"clip/fileprocessors/encrypter"
+	outputprocessor "clip/fileprocessors/outputProcessor"
+	"clip/fileprocessors/reporter"
+	st "clip/fileprocessors/storage"
 	"clip/locales"
 	"clip/modules"
-	outputprocessor "clip/outputProcessor"
-	"clip/reporter"
-	st "clip/storage"
 	"context"
 	"io"
 	"os"

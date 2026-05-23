@@ -1,8 +1,8 @@
 package reporter
 
 import (
+	outputprocessor "clip/fileprocessors/outputProcessor"
 	"clip/modules"
-	outputprocessor "clip/outputProcessor"
 )
 
 type Reporter interface {

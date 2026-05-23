@@ -2,7 +2,7 @@ package main
 
 import (
 	"clip/frontend"
-	"clip/theme"
+	"clip/frontend/theme"
 	"os"
 
 	"fyne.io/fyne/v2"
