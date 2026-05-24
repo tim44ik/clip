@@ -29,6 +29,10 @@ func (p *Parser) curTokenIs(t lexer.TokenType) bool {
 	return p.curTok.Type == t
 }
 
+func (p *Parser) peekTokenIs(t lexer.TokenType) bool {
+	return p.peekTok.Type == t
+}
+
 func (p *Parser) expect(t lexer.TokenType) {
 	if p.curTokenIs(t) {
 		p.nextToken()
@@ -48,8 +52,20 @@ func (p *Parser) ParseProgram() *ast.Program {
 func (p *Parser) parseStatement() ast.Stmt {
 	switch {
 	case p.curTokenIs(lexer.TOKEN_IDENT):
-		if p.curTokenIs(lexer.TOKEN_LBRACKET) {
-			return p.parseAssignIndex()
+		if p.peekTokenIs(lexer.TOKEN_LBRACKET) {
+			name := p.curTok.Value
+			p.nextToken()
+			p.nextToken()
+			p.expect(lexer.TOKEN_LBRACKET)
+			index := p.parseExpr()
+			p.expect(lexer.TOKEN_RBRACKET)
+			p.expect(lexer.TOKEN_ASSIGN)
+			value := p.parseExpr()
+			return &ast.AssignIndexStmt{
+				Array: &ast.VarExpr{Name: name},
+				Index: index,
+				Value: value,
+			}
 		}
 		return p.parseAssign()
 	case p.curTokenIs(lexer.TOKEN_PRINT):
@@ -214,7 +230,7 @@ func (p *Parser) parsePrimary() ast.Expr {
 		name := p.curTok.Value
 		p.nextToken()
 		if p.curTokenIs(lexer.TOKEN_LBRACKET) {
-			return p.parseIndex(&ast.VarExpr{Name: name})
+			return p.parseIndexOrSlice(&ast.VarExpr{Name: name})
 		}
 		return &ast.VarExpr{Name: name}
 	case p.curTokenIs(lexer.TOKEN_CONTAINS) ||
@@ -246,11 +262,23 @@ func (p *Parser) parseArrayLiteral() *ast.ArrayLiteral {
 	return &ast.ArrayLiteral{Elements: elements}
 }
 
-func (p *Parser) parseIndex(array ast.Expr) ast.Expr {
+func (p *Parser) parseIndexOrSlice(array ast.Expr) ast.Expr {
 	p.nextToken()
-	index := p.parseExpr()
+	var start, end ast.Expr
+	if !p.curTokenIs(lexer.TOKEN_COLON) && !p.curTokenIs(lexer.TOKEN_RBRACKET) {
+		start = p.parseExpr()
+	}
+	if p.curTokenIs(lexer.TOKEN_COLON) {
+		p.nextToken()
+		if !p.curTokenIs(lexer.TOKEN_RBRACKET) {
+			end = p.parseExpr()
+		}
+	} else {
+		p.expect(lexer.TOKEN_RBRACKET)
+		return &ast.IndexExpr{Array: array, Index: start}
+	}
 	p.expect(lexer.TOKEN_RBRACKET)
-	return &ast.IndexExpr{Array: array, Index: index}
+	return &ast.SliceExpr{Container: array, Start: start, End: end}
 }
 
 func (p *Parser) parseCall() *ast.CallExpr {

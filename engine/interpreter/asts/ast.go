@@ -122,6 +122,15 @@ type IndexExpr struct {
 func (i *IndexExpr) node()     {}
 func (i *IndexExpr) exprNode() {}
 
+type SliceExpr struct {
+	Container Expr
+	Start     Expr
+	End       Expr
+}
+
+func (s *SliceExpr) node()     {}
+func (s *SliceExpr) exprNode() {}
+
 type AssignIndexStmt struct {
 	Array Expr
 	Index Expr

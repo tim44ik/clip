@@ -198,10 +198,28 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 			case []interface{}:
 				return len(v)
 			case string:
-				return len(v)
+				return len([]rune(v))
 			default:
 				panic("len применим только к массиву или строке")
 			}
+		case "append":
+			if len(e.Args) < 1 {
+				panic("append требует хотя бы один аргумент")
+			}
+
+			arrVal := env.evalExpr(e.Args[0])
+			arr, ok := arrVal.([]interface{})
+			if !ok {
+				panic("append: первый аргумент должен быть массивом")
+			}
+
+			newElems := make([]interface{}, len(arr))
+			copy(newElems, arr)
+
+			for i := range len(e.Args) {
+				newElems = append(newElems, env.evalExpr(e.Args[i]))
+			}
+			return newElems
 		default:
 			panic("неизвестная функция")
 		}
@@ -212,20 +230,87 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 		}
 		return elems
 	case *ast.IndexExpr:
-		arrVal := env.evalExpr(e.Array)
-		arr, ok := arrVal.([]interface{})
-		if !ok {
-			panic("индексирование возможно только для массива")
-		}
+		arr := env.evalExpr(e.Array)
 		idxVal := env.evalExpr(e.Index)
 		idx, ok := idxVal.(int)
 		if !ok {
 			panic("индекс должен быть целым числом")
 		}
-		if idx < 0 || idx >= len(arr) {
-			panic(fmt.Sprintf("индекс %d вне диапазона (длина %d)", idx, len(arr)))
+
+		if str, ok := arr.(string); ok {
+			runes := []rune(str)
+			if idx < 0 || idx >= len(runes) {
+				panic(fmt.Sprintf("индекс %d вне диапазона строки (длина в рунах %d)", idx, len(runes)))
+			}
+			return string(runes[idx])
 		}
-		return arr[idx]
+
+		slice, ok := arr.([]interface{})
+		if !ok {
+			panic("индексирование возможно только для массива или строки")
+		}
+		if idx < 0 || idx >= len(slice) {
+			panic(fmt.Sprintf("индекс %d вне диапазона (длина %d)", idx, len(slice)))
+		}
+		return slice[idx]
+	case *ast.SliceExpr:
+		arr := env.evalExpr(e.Container)
+
+		var length int
+		var runes []rune
+		var isString bool
+		var sliceData []interface{}
+
+		switch v := arr.(type) {
+		case string:
+			runes = []rune(v)
+			length = len(runes)
+			isString = true
+		case []interface{}:
+			sliceData = v
+			length = len(sliceData)
+		default:
+			panic("wrong data type")
+		}
+
+		start := 0
+		end := length
+
+		if e.Start != nil {
+			startVal := env.evalExpr(e.Start)
+			startInt, ok := startVal.(int)
+			if !ok {
+				panic("начало среза должно быть целым числом")
+			}
+			start = startInt
+		}
+
+		if e.End != nil {
+			endVal := env.evalExpr(e.End)
+			endInt, ok := endVal.(int)
+			if !ok {
+				panic("конец среза должен быть целым числом")
+			}
+			end = endInt
+		}
+
+		if start < 0 {
+			start += length
+		}
+
+		if end < 0 {
+			end += length
+		}
+
+		if start < 0 || end < 0 || start > length || end > length || start > end {
+			panic(fmt.Sprintf("недопустимые границы среза: %d:%d (длина %d)", start, end, length))
+		}
+
+		if isString {
+			return string(runes[start:end])
+		} else {
+			return sliceData[start:end]
+		}
 	default:
 		panic("неизвестный узел выражения")
 	}
