@@ -29,7 +29,7 @@ func (a *AssignStmt) node()     {}
 func (a *AssignStmt) stmtNode() {}
 
 type PrintStmt struct {
-	Expr Expr
+	Expr []Expr
 }
 
 func (p *PrintStmt) node()     {}
@@ -53,6 +53,16 @@ type ForStmt struct {
 
 func (f *ForStmt) node()     {}
 func (f *ForStmt) stmtNode() {}
+
+type BreakStmt struct{}
+
+func (b *BreakStmt) node()     {}
+func (b *BreakStmt) stmtNode() {}
+
+type ContinueStmt struct{}
+
+func (b *ContinueStmt) node()     {}
+func (b *ContinueStmt) stmtNode() {}
 
 type IntLiteral struct {
 	Value int

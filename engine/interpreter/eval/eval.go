@@ -11,6 +11,9 @@ type Environment struct {
 	vars map[string]interface{}
 }
 
+type BreakSignal struct{}
+type ContinueSignal struct{}
+
 func NewEnvironment() *Environment {
 	return &Environment{vars: make(map[string]interface{})}
 }
@@ -28,37 +31,56 @@ func (e *Environment) Set(name string, value interface{}) {
 
 func (env *Environment) Eval(prog *ast.Program) {
 	for _, stmt := range prog.Statements {
-		env.evalStmt(stmt)
+		env.evalStmt(stmt, false)
 	}
 }
 
-func (env *Environment) evalStmt(stmt ast.Stmt) {
+func (env *Environment) execBlock(stmts []ast.Stmt) (isBreak bool, isContinue bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			if _, ok := r.(BreakSignal); ok {
+				isBreak = true
+				return
+			}
+			if _, ok := r.(ContinueSignal); ok {
+				isContinue = true
+				return
+			}
+			panic(r)
+		}
+	}()
+	for _, stmt := range stmts {
+		env.evalStmt(stmt, true)
+	}
+	return false, false
+}
+
+func (env *Environment) evalStmt(stmt ast.Stmt, inLoop bool) {
 	switch s := stmt.(type) {
 	case *ast.AssignStmt:
 		val := env.evalExpr(s.Expr)
 		env.Set(s.Name, val)
 	case *ast.PrintStmt:
-		val := env.evalExpr(s.Expr)
-		switch v := val.(type) {
-		case bool:
-			fmt.Println(v)
-		default:
-			fmt.Println(v)
+		val := make([]interface{}, 0, len(s.Expr))
+		for i := range s.Expr {
+			val = append(val, env.evalExpr(s.Expr[i]))
 		}
+		fmt.Println(val...)
+
 	case *ast.IfStmt:
 		cond := env.evalExpr(s.Cond)
 		if isTruthy(cond) {
 			for _, st := range s.ThenBody {
-				env.evalStmt(st)
+				env.evalStmt(st, inLoop)
 			}
 		} else {
 			for _, st := range s.ElseBody {
-				env.evalStmt(st)
+				env.evalStmt(st, inLoop)
 			}
 		}
 	case *ast.ForStmt:
 		if s.Init != nil {
-			env.evalStmt(s.Init)
+			env.evalStmt(s.Init, false)
 		}
 		for {
 			if s.Cond != nil {
@@ -67,13 +89,37 @@ func (env *Environment) evalStmt(stmt ast.Stmt) {
 					break
 				}
 			}
-			for _, st := range s.Body {
-				env.evalStmt(st)
+
+			isBreak, isContinue := env.execBlock(s.Body)
+
+			if isBreak {
+				break
 			}
+
+			if isContinue {
+				if s.Post != nil {
+					env.evalStmt(s.Post, false)
+				}
+				continue
+			}
+
 			if s.Post != nil {
-				env.evalStmt(s.Post)
+				env.evalStmt(s.Post, false)
 			}
 		}
+
+	case *ast.ContinueStmt:
+		if !inLoop {
+			panic("continue вне цикла")
+		}
+
+		panic(ContinueSignal{})
+	case *ast.BreakStmt:
+		if !inLoop {
+			panic("break вне цикла")
+		}
+
+		panic(BreakSignal{})
 	case *ast.AssignIndexStmt:
 		arrVal := env.evalExpr(s.Array)
 		arr, ok := arrVal.([]interface{})
@@ -203,7 +249,7 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 				panic("len применим только к массиву или строке")
 			}
 		case "append":
-			if len(e.Args) < 1 {
+			if len(e.Args) < 2 {
 				panic("append требует хотя бы один аргумент")
 			}
 
@@ -212,14 +258,24 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 			if !ok {
 				panic("append: первый аргумент должен быть массивом")
 			}
-
 			newElems := make([]interface{}, len(arr))
 			copy(newElems, arr)
-
-			for i := range len(e.Args) {
+			for i := 1; i < len(e.Args); i++ {
 				newElems = append(newElems, env.evalExpr(e.Args[i]))
 			}
 			return newElems
+		case "fields":
+			if len(e.Args) != 1 {
+				panic("fields требует один аргумент")
+			}
+
+			s := toString(env.evalExpr(e.Args[0]))
+			fields := strings.Fields(s)
+			res := make([]interface{}, 0, len(fields))
+			for _, f := range fields {
+				res = append(res, f)
+			}
+			return res
 		default:
 			panic("неизвестная функция")
 		}

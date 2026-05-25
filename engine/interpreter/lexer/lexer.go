@@ -33,6 +33,11 @@ func NewLexer(input string) *Lexer {
 	l.kw["contains"] = TOKEN_CONTAINS
 	l.kw["replace"] = TOKEN_REPLACE
 	l.kw["split"] = TOKEN_SPLIT
+	l.kw["len"] = TOKEN_LEN
+	l.kw["append"] = TOKEN_APPEND
+	l.kw["fields"] = TOKEN_FIELDS
+	l.kw["break"] = TOKEN_BREAK
+	l.kw["continue"] = TOKEN_CONTINUE
 	l.readChar()
 	return l
 }

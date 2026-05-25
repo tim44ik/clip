@@ -1,4 +1,4 @@
-package main
+package parser
 
 import (
 	ast "clip/engine/interpreter/asts"
@@ -74,9 +74,38 @@ func (p *Parser) parseStatement() ast.Stmt {
 		return p.parseIf()
 	case p.curTokenIs(lexer.TOKEN_FOR):
 		return p.parseFor()
+	case p.curTokenIs(lexer.TOKEN_BREAK):
+		return p.parseBreak()
+	case p.curTokenIs(lexer.TOKEN_CONTINUE):
+		return p.parseContinue()
 	default:
 		panic(fmt.Sprintf("неожиданный токен: %v ('%s') на %d:%d", p.curTok.Type, p.curTok.Value, p.curTok.Line, p.curTok.Col))
 	}
+}
+
+func (p *Parser) parseContinue() ast.Stmt {
+	p.nextToken()
+	return &ast.ContinueStmt{}
+}
+
+func (p *Parser) parseBreak() ast.Stmt {
+	p.nextToken()
+	return &ast.BreakStmt{}
+}
+
+func (p *Parser) parsePrint() ast.Stmt {
+	p.nextToken()
+	p.expect(lexer.TOKEN_LPAREN)
+	args := []ast.Expr{}
+	if !p.curTokenIs(lexer.TOKEN_RPAREN) {
+		args = append(args, p.parseExpr())
+		for p.curTokenIs(lexer.TOKEN_COMMA) {
+			p.nextToken()
+			args = append(args, p.parseExpr())
+		}
+	}
+	p.expect(lexer.TOKEN_RPAREN)
+	return &ast.PrintStmt{Expr: args}
 }
 
 func (p *Parser) parseAssignIndex() *ast.AssignIndexStmt {
@@ -96,14 +125,6 @@ func (p *Parser) parseAssign() *ast.AssignStmt {
 	p.expect(lexer.TOKEN_ASSIGN)
 	expr := p.parseExpr()
 	return &ast.AssignStmt{Name: name, Expr: expr}
-}
-
-func (p *Parser) parsePrint() *ast.PrintStmt {
-	p.nextToken()
-	p.expect(lexer.TOKEN_LPAREN)
-	expr := p.parseExpr()
-	p.expect(lexer.TOKEN_RPAREN)
-	return &ast.PrintStmt{Expr: expr}
 }
 
 func (p *Parser) parseIf() *ast.IfStmt {
@@ -225,16 +246,16 @@ func (p *Parser) parsePrimary() ast.Expr {
 	case p.curTokenIs(lexer.TOKEN_IDENT):
 		name := p.curTok.Value
 		p.nextToken()
-		return &ast.VarExpr{Name: name}
-	case p.curTokenIs(lexer.TOKEN_IDENT):
-		name := p.curTok.Value
-		p.nextToken()
 		if p.curTokenIs(lexer.TOKEN_LBRACKET) {
 			return p.parseIndexOrSlice(&ast.VarExpr{Name: name})
 		}
 		return &ast.VarExpr{Name: name}
 	case p.curTokenIs(lexer.TOKEN_CONTAINS) ||
-		p.curTokenIs(lexer.TOKEN_REPLACE):
+		p.curTokenIs(lexer.TOKEN_REPLACE) ||
+		p.curTokenIs(lexer.TOKEN_SPLIT) ||
+		p.curTokenIs(lexer.TOKEN_LEN) ||
+		p.curTokenIs(lexer.TOKEN_APPEND) ||
+		p.curTokenIs(lexer.TOKEN_FIELDS):
 		return p.parseCall()
 	case p.curTokenIs(lexer.TOKEN_LPAREN):
 		p.nextToken()
