@@ -3,13 +3,11 @@ package filemanager
 import (
 	"bytes"
 	"clip/errors"
-	"clip/fileprocessors/encrypter"
-	outputprocessor "clip/fileprocessors/outputProcessor"
-	"clip/fileprocessors/reporter"
-	st "clip/fileprocessors/storage"
 	"clip/locales"
-	"clip/modules"
-	"context"
+	"clip/models/modules"
+	"clip/processors/encrypter"
+	"clip/processors/reporter"
+	st "clip/processors/storage"
 	"io"
 	"os"
 	"path/filepath"
@@ -244,70 +242,8 @@ func (f *FileManager) EncryptionChecker(fileData []byte) bool {
 	return isEncrypted
 }
 
-func (f *FileManager) GetReportType(errCh chan<- error, db outputprocessor.DB, callback func(reporter.Reporter, outputprocessor.DB)) {
-	var selected string
-	var rp reporter.Reporter
-	radio := widget.NewRadioGroup([]string{".pdf"}, func(value string) {
-		selected = value
-	})
-
-	d := dialog.NewCustomConfirm(
-		locales.T(f.lang, "choose_output_type"),
-		locales.T(f.lang, "ok"),
-		locales.T(f.lang, "cancel"),
-		container.NewPadded(
-			container.NewBorder(radio, nil, nil, nil),
-		),
-		func(confirm bool) {
-			if confirm {
-				rp = reporter.NewReporter(selected)
-				if rp == nil {
-					errCh <- errors.New(errReportType)
-					return
-				}
-				callback(rp, db)
-			}
-		},
-		f.window,
-	)
-
-	d.Resize(fyne.NewSize(300, 200))
-	d.Show()
-}
-
-func (f *FileManager) GetDBType(ctx context.Context, callback func(outputprocessor.DB)) {
-	var selected string
-	var chosenDB outputprocessor.DB
-	radio := widget.NewRadioGroup([]string{"NVD"}, func(value string) {
-		selected = value
-	})
-
-	d := dialog.NewCustomConfirm(
-		locales.T(f.lang, "choose_vuln_db"),
-		locales.T(f.lang, "ok"),
-		locales.T(f.lang, "cancel"),
-		container.NewPadded(
-			container.NewBorder(radio, nil, nil, nil),
-		),
-		func(confirm bool) {
-			if confirm {
-				chosenDB = outputprocessor.NewDB(selected, ctx)
-				if chosenDB == nil {
-					return
-				}
-				callback(chosenDB)
-			}
-		},
-		f.window,
-	)
-
-	d.Resize(fyne.NewSize(200, 200))
-	d.Show()
-}
-
 func (f *FileManager) ReportCreationWindow(
-	db outputprocessor.DB,
-	r reporter.Reporter,
+	report *reporter.Report,
 	callback func(string)) {
 	filesaveDialog := dialog.NewFileSave(
 		func(writer fyne.URIWriteCloser, err error) {
@@ -317,7 +253,7 @@ func (f *FileManager) ReportCreationWindow(
 				}
 
 				path := writer.URI().Path()
-				ext := r.GetFileType()
+				ext := report.Reporter.GetFileType()
 
 				if filepath.Base(path) == ext {
 					path = time.Now().Format("02.01.2006 15-04-05") + ext
@@ -326,7 +262,7 @@ func (f *FileManager) ReportCreationWindow(
 				go callback(path)
 			}()
 		}, f.window)
-	filesaveDialog.SetFilter(storage.NewExtensionFileFilter([]string{".pdf"}))
+	filesaveDialog.SetFilter(storage.NewExtensionFileFilter([]string{report.Reporter.GetFileType()}))
 	filesaveDialog.Resize(fyne.NewSize(900, 500))
 	fyne.Do(func() { filesaveDialog.Show() })
 }
@@ -432,7 +368,7 @@ func (f *FileManager) LoadScripts(errCh chan<- error, callback func([]*Script)) 
 		for _, f := range files {
 
 			ext := strings.ToLower(filepath.Ext(f.Name()))
-			if ext != ".sh" && ext != ".txt" && ext != ".bat" && ext != ".ps" {
+			if ext != ".sh" && ext != ".txt" && ext != ".bat" && ext != ".ps" && ext != ".cmd" {
 				continue
 			}
 

@@ -3,13 +3,12 @@ package frontend
 import (
 	"clip/engine/scenario"
 	appErrors "clip/errors"
-	"clip/fileprocessors/encrypter"
-	"clip/fileprocessors/filemanager"
-	outputprocessor "clip/fileprocessors/outputProcessor"
-	"clip/fileprocessors/reporter"
-	st "clip/fileprocessors/storage"
 	"clip/locales"
-	"clip/modules"
+	"clip/models/modules"
+	"clip/processors/encrypter"
+	"clip/processors/filemanager"
+	"clip/processors/reporter"
+	st "clip/processors/storage"
 	"clip/utility"
 	"context"
 	_ "embed"
@@ -168,10 +167,6 @@ func (a *ClipWindow) buildWindow(app fyne.App) {
 		),
 	)
 	a.Window.Resize(fyne.NewSize(900, 600))
-	a.Window.SetOnClosed(func() {
-		a.interruptScenario()
-		a.Window.Close()
-	})
 	a.elms.activity.Hide()
 }
 
@@ -263,7 +258,18 @@ func (a *ClipWindow) runner(scenario *scenario.Scenario, ctx context.Context) {
 	a.elms.activity.Show()
 	a.elms.activity.Start()
 
-	scenario.Execute(ctx,
+	errCh := make(chan error, len(a.modules.ChildModules)+1)
+	defer close(errCh)
+	go func() {
+		for err := range errCh {
+			if err != nil {
+				ShowError(a.modules.CurrentLang, err, a.Window)
+				a.interruptScenario()
+			}
+		}
+	}()
+
+	report := scenario.Execute(errCh, ctx,
 		func(s string, m *modules.Module) {
 			fyne.DoAndWait(func() { a.addModuleOutput(m, s) })
 		})
@@ -271,15 +277,15 @@ func (a *ClipWindow) runner(scenario *scenario.Scenario, ctx context.Context) {
 	if a.currentScenario == scenario {
 		fyne.DoAndWait(func() { a.elms.activity.Hide(); a.elms.activity.Stop() })
 		a.currentScenario = nil
-
-		if !a.defineOutput(ctx) {
+		if report == nil {
 			dialog.ShowInformation(
 				locales.T(a.modules.CurrentLang, "completed"),
 				locales.T(a.modules.CurrentLang, "scenario_completed"),
 				a.Window,
 			)
+		} else {
+			go a.defineOutput(report, errCh, ctx)
 		}
-
 	}
 }
 
@@ -313,38 +319,7 @@ func (a *ClipWindow) beginScenario() {
 	go a.runner(scenario, ctx)
 }
 
-func (a *ClipWindow) defineOutput(ctx context.Context) bool {
-	makeReportFor := []*modules.Module{}
-	var process bool
-	for _, m := range a.modules.ChildModules {
-		if m.MakeReport.Do {
-			makeReportFor = append(makeReportFor, m)
-		}
-		if m.MakeReport.Process {
-			process = true
-		}
-	}
-
-	if len(makeReportFor) == 0 {
-		return false
-	}
-
-	errChan := make(chan error)
-	ctx, cancel := context.WithCancel(ctx)
-	go func() {
-		for err := range errChan {
-			if err != nil {
-				cancel()
-
-				fyne.Do(func() {
-					ShowError(a.modules.CurrentLang, err, a.Window)
-				})
-				close(errChan)
-				return
-			}
-		}
-	}()
-
+func (a *ClipWindow) defineOutput(report *reporter.Report, errCh chan<- error, ctx context.Context) {
 	f := filemanager.NewFileManager(
 		a.modules.CurrentLang,
 		a.profiles.path,
@@ -352,89 +327,25 @@ func (a *ClipWindow) defineOutput(ctx context.Context) bool {
 		a.profiles.exists,
 	)
 
-	callback := func(r reporter.Reporter, db outputprocessor.DB) {
+	go f.ReportCreationWindow(report,
+		func(path string) {
 
-		if ctx.Err() != nil {
-			return
-		}
-
-		go f.ReportCreationWindow(db, r,
-			func(path string) {
-
-				if ctx.Err() != nil {
-					return
-				}
-
-				progressChan := make(chan float64)
-				defer close(progressChan)
-
-				ext := r.GetFileType()
-				if filepath.Ext(path) != ext {
-					defer os.Remove(path)
-					path += ext
-				}
-
-				go r.CreateReport(db, makeReportFor, path, progressChan, errChan)
-
-				progressBar := widget.NewProgressBar()
-
-				progressWindow := dialog.NewCustomWithoutButtons(
-					locales.T(a.modules.CurrentLang, "creating_report"),
-					progressBar,
-					a.Window,
-				)
-
-				fyne.Do(func() {
-					progressWindow.Show()
-				})
-
-				for {
-					select {
-
-					case <-ctx.Done():
-						fyne.Do(func() {
-							progressWindow.Hide()
-						})
-						return
-
-					case p, ok := <-progressChan:
-						if !ok {
-							fyne.Do(func() {
-								progressWindow.Hide()
-							})
-							return
-						}
-
-						fyne.DoAndWait(func() {
-							progressBar.SetValue(p)
-						})
-
-						if p >= 1 {
-							fyne.Do(func() {
-								progressWindow.Hide()
-							})
-							return
-						}
-					}
-				}
-			},
-		)
-	}
-
-	var db outputprocessor.DB
-	switch process {
-	case true:
-		f.GetDBType(ctx, func(db outputprocessor.DB) {
 			if ctx.Err() != nil {
 				return
 			}
-			f.GetReportType(errChan, db, callback)
-		})
-	case false:
-		f.GetReportType(errChan, db, callback)
-	}
 
-	return true
+			progressChan := make(chan float64)
+			defer close(progressChan)
+
+			ext := report.Reporter.GetFileType()
+			if filepath.Ext(path) != ext {
+				defer os.Remove(path)
+				path += ext
+			}
+
+			go report.Reporter.CreateReport(path, report.Content, errCh)
+		},
+	)
 }
 
 func (a *ClipWindow) interruptScenario() {
@@ -448,11 +359,7 @@ func (a *ClipWindow) interruptScenario() {
 	}
 	a.currentScenario = nil
 	a.elms.activity.Hide()
-	dialog.ShowInformation(
-		locales.T(a.modules.CurrentLang, "interrupted"),
-		locales.T(a.modules.CurrentLang, "scenario_interrupted"),
-		a.Window,
-	)
+
 }
 
 func (a *ClipWindow) selectMainModule() {
@@ -767,12 +674,6 @@ func (a *ClipWindow) fullRefresh() {
 					func() { a.beginScenario() }),
 				fyne.NewMenuItem(locales.T(a.modules.CurrentLang, "break_scenario"),
 					func() { a.interruptScenario() }),
-				fyne.NewMenuItem(locales.T(a.modules.CurrentLang, "break_and_report"),
-					func() {
-						a.interruptScenario()
-						a.defineOutput(context.Background())
-					},
-				),
 			)))
 
 	a.elms.topPanel.Add(

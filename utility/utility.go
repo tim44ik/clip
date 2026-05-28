@@ -2,64 +2,19 @@ package utility
 
 import (
 	"clip/errors"
-	"clip/modules"
+	"clip/models/modules"
 	"slices"
 
-	"bytes"
-	"context"
-	"io"
-	"runtime"
 	"strconv"
 	"strings"
 
-	"golang.org/x/text/encoding/charmap"
-	"golang.org/x/text/transform"
-
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/widget"
-
-	ansi "github.com/leaanthony/go-ansi-parser"
 )
 
 type WrappedReader struct {
 	Channel chan string
 	Close   bool
-}
-
-func WrapReaderToChannel(reader io.Reader) (ch chan string, free func()) {
-	var doFree bool
-	var outputString string
-	buff := make([]byte, 1024)
-	ch = make(chan string)
-	free = func() { doFree = true }
-
-	go func() {
-		defer close(ch)
-
-		for {
-			n, _ := reader.Read(buff)
-			if n == 0 {
-				if doFree {
-					return
-				}
-
-				continue
-			}
-
-			if runtime.GOOS == "windows" {
-				reader := transform.NewReader(bytes.NewReader(buff[:n]), charmap.CodePage866.NewDecoder())
-				bytes, _ := io.ReadAll(reader)
-				outputString, _ = ansi.Cleanse(string(bytes))
-
-			} else {
-				outputString, _ = ansi.Cleanse(string(buff[:n]))
-			}
-
-			ch <- outputString
-		}
-	}()
-
-	return
 }
 
 func NewDropButton(icon fyne.Resource, canvas fyne.Canvas, menu *fyne.Menu) *widget.Button {
@@ -68,15 +23,6 @@ func NewDropButton(icon fyne.Resource, canvas fyne.Canvas, menu *fyne.Menu) *wid
 	return widget.NewButtonWithIcon("", icon, func() {
 		popup.Show()
 	})
-}
-
-func IsCanceled(ctx context.Context) bool {
-	select {
-	case <-ctx.Done():
-		return true
-	default:
-		return false
-	}
 }
 
 func GetQueue(m []*modules.Module) ([][]*modules.Module, error) {
@@ -130,10 +76,10 @@ func GetQueue(m []*modules.Module) ([][]*modules.Module, error) {
 		queueMap[qNum] = append(queueMap[qNum], m[i])
 	}
 
-	return getSlice(queueMap), nil
+	return sendSlice(queueMap), nil
 }
 
-func getSlice(q map[int][]*modules.Module) (enumSlice [][]*modules.Module) {
+func sendSlice(q map[int][]*modules.Module) (enumSlice [][]*modules.Module) {
 	qSlice := make([]int, 0, len(q))
 
 	for key := range q {

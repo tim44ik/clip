@@ -1,7 +1,7 @@
 package frontend
 
 import (
-	"clip/modules"
+	"clip/models/modules"
 	"slices"
 )
 

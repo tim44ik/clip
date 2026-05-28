@@ -27,7 +27,7 @@
   { "id": "enter_new_module_name", "translation": "Enter new module name" },
   { "id": "add_new_module", "translation": "Add new module" },
   { "id": "cancelled", "translation": "Cancelled" },
-  { "id": "report_file_type_error", "translation": "Report file format was not provided" },
+  { "id": "report_file_type_error", "translation": "Report file format is incorrect" },
   { "id": "apply", "translation": "Apply" },
   { "id": "choose_language", "translation": "Choose language" },
   { "id": "view_full_output", "translation": "View full output" },
@@ -65,5 +65,6 @@
   { "id": "choose_scripts", "translation":"Choose scripts to load"},
   { "id": "clear", "translation":"Clear"},
   { "id": "select_all", "translation":"Select all"},
-  { "id": "load_chosen", "translation":"Load selected"}
+  { "id": "load_chosen", "translation":"Load selected"},
+  { "id": "execution_error", "translation":"Error occured while executing code in module"}
 ]

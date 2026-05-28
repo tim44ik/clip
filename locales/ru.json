@@ -65,5 +65,6 @@
   { "id": "choose_scripts", "translation":"Выберите скрипты для загрузки"},
   { "id": "clear", "translation":"Очистить"},
   { "id": "choose_all", "translation":"Выбрать все"},
-  { "id": "load_chosen", "translation":"Загрузить выбранное"}
+  { "id": "load_chosen", "translation":"Загрузить выбранное"},
+  { "id": "execution_error", "translation":"Ошибка исполнения кода в модуле"}
 ]

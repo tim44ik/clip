@@ -3,7 +3,7 @@ package storage
 import (
 	"bytes"
 	"clip/errors"
-	"clip/modules"
+	"clip/models/modules"
 	"encoding/json"
 	"os"
 	"path/filepath"

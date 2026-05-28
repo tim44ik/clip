@@ -1,38 +1,126 @@
 package eval
 
 import (
+	"bufio"
+	"bytes"
 	ast "clip/engine/interpreter/asts"
 	"clip/engine/interpreter/lexer"
+	outputprocessor "clip/processors/outputProcessor"
+	"clip/processors/reporter"
+	"context"
 	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"slices"
+	"strconv"
 	"strings"
+	"time"
 )
 
 type Environment struct {
-	vars map[string]interface{}
+	ctx        context.Context
+	proc       *os.Process
+	stdOutR    io.ReadCloser
+	stdInW     io.WriteCloser
+	report     *reporter.Report
+	client     *outputprocessor.Processor
+	outputter  func(string)
+	moduleName string
+	vars       map[string]interface{}
 }
 
 type BreakSignal struct{}
 type ContinueSignal struct{}
 
-func NewEnvironment() *Environment {
-	return &Environment{vars: make(map[string]interface{})}
+func NewEnvironment(ctx context.Context, report *reporter.Report, name string, outputter func(string)) *Environment {
+	return &Environment{ctx: ctx, vars: make(map[string]interface{}), report: report, moduleName: name, outputter: outputter}
 }
 
-func (e *Environment) Get(name string) interface{} {
-	if val, ok := e.vars[name]; ok {
+func (env *Environment) get(name string) interface{} {
+	if val, ok := env.vars[name]; ok {
 		return val
 	}
 	panic(fmt.Sprintf("переменная %s не определена", name))
 }
 
-func (e *Environment) Set(name string, value interface{}) {
-	e.vars[name] = value
+func (env *Environment) set(name string, value interface{}) {
+	env.vars[name] = value
 }
 
 func (env *Environment) Eval(prog *ast.Program) {
+	defer env.close()
 	for _, stmt := range prog.Statements {
 		env.evalStmt(stmt, false)
 	}
+}
+
+func (env *Environment) run() {
+	var err error
+	var stdInR, stdOutW, stdErrW *os.File
+	env.stdOutR, stdOutW, err = os.Pipe()
+	if err != nil {
+		panic(err)
+	}
+
+	stdInR, env.stdInW, err = os.Pipe()
+	if err != nil {
+		panic(err)
+	}
+
+	env.proc, err = os.StartProcess("/bin/bash", nil, &os.ProcAttr{
+		Files: []*os.File{stdInR, stdOutW, stdOutW}})
+	if err != nil {
+		panic(err)
+	}
+
+	stdInR.Close()
+	stdOutW.Close()
+	stdErrW.Close()
+}
+
+func (env *Environment) close() {
+	if env.proc != nil {
+		fmt.Println("proc is closing")
+		env.stdOutR.Close()
+		env.stdInW.Close()
+		env.proc.Wait()
+	}
+}
+
+func (env *Environment) runCommand(cmd string) string {
+	marker := fmt.Sprintf("__END_OF_CMD_%d_%d__", os.Getpid(), time.Now().UnixNano())
+	fullCmd := fmt.Sprintf("%s\necho '%s'\n", cmd, marker)
+	_, err := env.stdInW.Write([]byte(fullCmd))
+	if err != nil {
+		panic(err)
+	}
+
+	var output bytes.Buffer
+	reader := bufio.NewReader(env.stdOutR)
+
+	for {
+		line, err := reader.ReadString('\n')
+
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			return output.String() + "\n" + err.Error()
+		}
+		if strings.HasPrefix(line, "'"+marker+"'") {
+			codeStr := strings.TrimPrefix(line, "'"+marker+"'")
+			codeStr = strings.TrimSpace(codeStr)
+			var exitCode int
+			fmt.Sscanf(codeStr, "%d", &exitCode)
+			if exitCode != 0 {
+				return output.String() + " exit code:" + strconv.Itoa(exitCode)
+			}
+			return output.String()
+		}
+		output.WriteString(line)
+	}
+	return output.String()
 }
 
 func (env *Environment) execBlock(stmts []ast.Stmt) (isBreak bool, isContinue bool) {
@@ -59,14 +147,15 @@ func (env *Environment) evalStmt(stmt ast.Stmt, inLoop bool) {
 	switch s := stmt.(type) {
 	case *ast.AssignStmt:
 		val := env.evalExpr(s.Expr)
-		env.Set(s.Name, val)
+		env.set(s.Name, val)
 	case *ast.PrintStmt:
 		val := make([]interface{}, 0, len(s.Expr))
 		for i := range s.Expr {
 			val = append(val, env.evalExpr(s.Expr[i]))
 		}
 		fmt.Println(val...)
-
+	case *ast.ExprStmt:
+		env.evalExpr(s.Expr)
 	case *ast.IfStmt:
 		cond := env.evalExpr(s.Cond)
 		if isTruthy(cond) {
@@ -163,7 +252,7 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 	case *ast.StringLiteral:
 		return e.Value
 	case *ast.VarExpr:
-		return env.Get(e.Name)
+		return env.get(e.Name)
 	case *ast.UnaryExpr:
 		right := env.evalExpr(e.Right)
 		switch e.Operator {
@@ -181,6 +270,10 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 		left := env.evalExpr(e.Left)
 		right := env.evalExpr(e.Right)
 		switch e.Operator {
+		case lexer.TOKEN_AND:
+			return isTruthy(left) == isTruthy(right)
+		case lexer.TOKEN_OR:
+			return isTruthy(left) || isTruthy(right)
 		case lexer.TOKEN_PLUS:
 			return add(left, right)
 		case lexer.TOKEN_MINUS:
@@ -208,22 +301,51 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 		}
 	case *ast.CallExpr:
 		switch e.Func {
-		case "contains":
+		case "Contains":
 			if len(e.Args) != 2 {
 				panic("contains требует 2 аргумента")
 			}
-			str := toString(env.evalExpr(e.Args[0]))
-			sub := toString(env.evalExpr(e.Args[1]))
-			return strings.Contains(str, sub)
-		case "replace":
+			v := env.evalExpr(e.Args[0])
+			sub := env.evalExpr(e.Args[1])
+			switch value := v.(type) {
+			case string:
+				substr := toString(sub)
+				return strings.Contains(value, substr)
+			case []interface{}:
+				return slices.Contains(value, sub)
+			default:
+				panic("wrong value type")
+			}
+
+		case "Replace":
 			if len(e.Args) != 3 {
 				panic("replace требует 3 аргумента")
 			}
-			str := toString(env.evalExpr(e.Args[0]))
-			old := toString(env.evalExpr(e.Args[1]))
-			newStr := toString(env.evalExpr(e.Args[2]))
-			return strings.ReplaceAll(str, old, newStr)
-		case "split":
+			value := env.evalExpr(e.Args[0])
+			old := env.evalExpr(e.Args[1])
+			new := env.evalExpr(e.Args[2])
+			switch v := value.(type) {
+			case string:
+				o := toString(old)
+				n := toString(new)
+				return strings.ReplaceAll(v, o, n)
+			case []interface{}:
+				return func() []interface{} {
+					newSlice := make([]interface{}, len(v))
+					for i, val := range v {
+						if val == old {
+							newSlice[i] = new
+							continue
+						}
+						newSlice[i] = val
+					}
+					return newSlice
+				}()
+			default:
+				panic("неправильный тип данных в replace")
+			}
+
+		case "Split":
 			if len(e.Args) != 2 {
 				panic("split требует 2 аргумента: строка, разделитель")
 			}
@@ -235,7 +357,7 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 				res[i] = p
 			}
 			return res
-		case "len":
+		case "Len":
 			if len(e.Args) != 1 {
 				panic("len требует 1 аргумент")
 			}
@@ -248,7 +370,7 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 			default:
 				panic("len применим только к массиву или строке")
 			}
-		case "append":
+		case "Append":
 			if len(e.Args) < 2 {
 				panic("append требует хотя бы один аргумент")
 			}
@@ -264,7 +386,7 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 				newElems = append(newElems, env.evalExpr(e.Args[i]))
 			}
 			return newElems
-		case "fields":
+		case "Fields":
 			if len(e.Args) != 1 {
 				panic("fields требует один аргумент")
 			}
@@ -276,6 +398,58 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 				res = append(res, f)
 			}
 			return res
+		case "Run":
+			if len(e.Args) < 2 {
+				panic("run требует 2 и более аргументов")
+			}
+
+			if env.proc == nil {
+				env.run()
+			}
+
+			var output strings.Builder
+			for i := 1; i < len(e.Args); i++ {
+				s := toString(env.evalExpr(e.Args[i]))
+				output.WriteString(env.runCommand(s))
+			}
+
+			varg := toString(env.evalExpr(e.Args[0]))
+			env.isVerbose(varg, output)
+			return output.String()
+		case "RunIsolated":
+			if len(e.Args) < 2 {
+				panic("run требует 2 и более аргументов")
+			}
+
+			var output strings.Builder
+			for i := 1; i < len(e.Args); i++ {
+				s := toString(env.evalExpr(e.Args[i]))
+				output.WriteString(env.runIsolated(s))
+			}
+
+			varg := toString(env.evalExpr(e.Args[0]))
+			env.isVerbose(varg, output)
+			return output.String()
+		case "Report":
+			if len(e.Args) < 2 {
+				panic("Report требует 2 и более аргументов")
+			}
+
+			body := ""
+
+			if env.report == nil {
+				body = env.createReport(e.Args)
+			} else {
+				body = env.addToReport(e.Args)
+			}
+
+			return body
+		case "Process":
+			if len(e.Args) < 2 {
+				panic("Process требует 2 и более аргументов")
+			}
+
+			return env.process(e.Args)
 		default:
 			panic("неизвестная функция")
 		}
@@ -369,6 +543,94 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 		}
 	default:
 		panic("неизвестный узел выражения")
+	}
+}
+
+func (env *Environment) process(args []ast.Expr) []string {
+	dbType := toString(env.evalExpr(args[0]))
+	db := outputprocessor.NewDB(dbType, env.ctx)
+
+	cache := make(map[string]*outputprocessor.Order)
+	software := make([]*outputprocessor.Order, 0)
+	cve := make([]*outputprocessor.Order, 0)
+
+	processor := outputprocessor.NewProcessor(db, cache, software, cve)
+
+	data := args[1:]
+
+	output := make([]string, len(data))
+
+	for i := range data {
+		output = append(output, processor.ProcessOutput(toString(env.evalExpr(data[i]))))
+	}
+
+	return output
+}
+
+func (env *Environment) createReport(args []ast.Expr) string {
+	rtype := toString(env.evalExpr(args[0]))
+	env.report = reporter.NewReport(rtype)
+
+	err := env.report.NewReporter()
+	if err != nil {
+		panic(err)
+	}
+
+	env.report.Content = append(env.report.Content, env.report.NewReportContent(env.moduleName))
+	return env.fillReport(env.report.Content[0], args[1:])
+}
+
+func (env *Environment) addToReport(args []ast.Expr) string {
+	rtype := toString(env.evalExpr(args[0]))
+	if env.report.Rtype != rtype {
+		panic("неверный формат отчета")
+	}
+	var content *reporter.ReportContent
+	for _, c := range env.report.Content {
+		if c.Mname == env.moduleName {
+			content = c
+			break
+		}
+	}
+
+	if content == nil {
+		env.report.Content = append(env.report.Content, env.report.NewReportContent(env.moduleName))
+		content = env.report.Content[len(env.report.Content)-1]
+	}
+
+	return env.fillReport(content, args[1:])
+}
+
+func (env *Environment) fillReport(r *reporter.ReportContent, args []ast.Expr) string {
+	for i := range args {
+		r.Body += toString(args[i]) + "\n"
+	}
+	return r.Body
+}
+
+func (env *Environment) runIsolated(s string) string {
+	cmd := exec.Command("cmd", "/C", s)
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stdout
+	err := cmd.Run()
+	if err != nil {
+		panic(err.Error())
+	}
+	return stdout.String()
+}
+
+func (env *Environment) writeStdIn(s string) {
+	env.stdInW.Write([]byte(s))
+}
+
+func (env *Environment) isVerbose(varg string, output strings.Builder) {
+	switch varg {
+	case "Verbose":
+		env.outputter(output.String())
+	case "":
+	default:
+		panic("неизвестный аргумент")
 	}
 }
 

@@ -64,6 +64,22 @@ type ContinueStmt struct{}
 func (b *ContinueStmt) node()     {}
 func (b *ContinueStmt) stmtNode() {}
 
+type AssignIndexStmt struct {
+	Array Expr
+	Index Expr
+	Value Expr
+}
+
+func (a *AssignIndexStmt) node()     {}
+func (a *AssignIndexStmt) stmtNode() {}
+
+type ExprStmt struct {
+	Expr Expr
+}
+
+func (e *ExprStmt) node()     {}
+func (e *ExprStmt) stmtNode() {}
+
 type IntLiteral struct {
 	Value int
 }
@@ -140,12 +156,3 @@ type SliceExpr struct {
 
 func (s *SliceExpr) node()     {}
 func (s *SliceExpr) exprNode() {}
-
-type AssignIndexStmt struct {
-	Array Expr
-	Index Expr
-	Value Expr
-}
-
-func (a *AssignIndexStmt) node()     {}
-func (a *AssignIndexStmt) stmtNode() {}

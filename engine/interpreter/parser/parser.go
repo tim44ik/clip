@@ -79,6 +79,10 @@ func (p *Parser) parseStatement() ast.Stmt {
 	case p.curTokenIs(lexer.TOKEN_CONTINUE):
 		return p.parseContinue()
 	default:
+		if p.isExpressionStart(p.curTok.Type) {
+			expr := p.parseExpr()
+			return &ast.ExprStmt{Expr: expr}
+		}
 		panic(fmt.Sprintf("неожиданный токен: %v ('%s') на %d:%d", p.curTok.Type, p.curTok.Value, p.curTok.Line, p.curTok.Col))
 	}
 }
@@ -108,17 +112,6 @@ func (p *Parser) parsePrint() ast.Stmt {
 	return &ast.PrintStmt{Expr: args}
 }
 
-func (p *Parser) parseAssignIndex() *ast.AssignIndexStmt {
-	array := &ast.VarExpr{Name: p.curTok.Value}
-	p.nextToken()
-	p.expect(lexer.TOKEN_LBRACKET)
-	index := p.parseExpr()
-	p.expect(lexer.TOKEN_RBRACKET)
-	p.expect(lexer.TOKEN_ASSIGN)
-	value := p.parseExpr()
-	return &ast.AssignIndexStmt{Array: array, Index: index, Value: value}
-}
-
 func (p *Parser) parseAssign() *ast.AssignStmt {
 	name := p.curTok.Value
 	p.nextToken()
@@ -139,6 +132,21 @@ func (p *Parser) parseIf() *ast.IfStmt {
 	}
 	p.expect(lexer.TOKEN_END)
 	return &ast.IfStmt{Cond: cond, ThenBody: thenBody, ElseBody: elseBody}
+}
+
+func (p *Parser) parseLogical() ast.Expr {
+	left := p.parseCompare()
+	for {
+		if p.curTokenIs(lexer.TOKEN_AND) || p.curTokenIs(lexer.TOKEN_OR) {
+			op := p.curTok.Type
+			p.nextToken()
+			right := p.parseCompare()
+			left = &ast.BinaryExpr{Left: left, Operator: op, Right: right}
+		} else {
+			break
+		}
+	}
+	return left
 }
 
 func (p *Parser) parseFor() *ast.ForStmt {
@@ -177,7 +185,7 @@ func (p *Parser) parseBlockUntil(terminals ...lexer.TokenType) []ast.Stmt {
 }
 
 func (p *Parser) parseExpr() ast.Expr {
-	return p.parseCompare()
+	return p.parseLogical()
 }
 
 func (p *Parser) parseCompare() ast.Expr {
@@ -218,7 +226,7 @@ func (p *Parser) parseMultiplicative() ast.Expr {
 }
 
 func (p *Parser) parseUnary() ast.Expr {
-	if p.curTokenIs(lexer.TOKEN_MINUS) {
+	if p.curTokenIs(lexer.TOKEN_MINUS) || p.curTokenIs(lexer.TOKEN_NOT) {
 		op := p.curTok.Type
 		p.nextToken()
 		expr := p.parsePrimary()
@@ -255,7 +263,11 @@ func (p *Parser) parsePrimary() ast.Expr {
 		p.curTokenIs(lexer.TOKEN_SPLIT) ||
 		p.curTokenIs(lexer.TOKEN_LEN) ||
 		p.curTokenIs(lexer.TOKEN_APPEND) ||
-		p.curTokenIs(lexer.TOKEN_FIELDS):
+		p.curTokenIs(lexer.TOKEN_FIELDS) ||
+		p.curTokenIs(lexer.TOKEN_RUN) ||
+		p.curTokenIs(lexer.TOKEN_RUNISOLATED) ||
+		p.curTokenIs(lexer.TOKEN_PROCESS) ||
+		p.curTokenIs(lexer.TOKEN_REPORT):
 		return p.parseCall()
 	case p.curTokenIs(lexer.TOKEN_LPAREN):
 		p.nextToken()
@@ -316,4 +328,18 @@ func (p *Parser) parseCall() *ast.CallExpr {
 	}
 	p.expect(lexer.TOKEN_RPAREN)
 	return &ast.CallExpr{Func: funcName, Args: args}
+}
+
+func (p *Parser) isExpressionStart(typ lexer.TokenType) bool {
+	switch typ {
+	case lexer.TOKEN_NUMBER, lexer.TOKEN_STRING, lexer.TOKEN_TRUE, lexer.TOKEN_FALSE,
+		lexer.TOKEN_IDENT, lexer.TOKEN_LPAREN, lexer.TOKEN_LBRACKET,
+		lexer.TOKEN_MINUS, lexer.TOKEN_NOT,
+		lexer.TOKEN_CONTAINS, lexer.TOKEN_REPLACE, lexer.TOKEN_SPLIT, lexer.TOKEN_LEN,
+		lexer.TOKEN_APPEND, lexer.TOKEN_FIELDS, lexer.TOKEN_RUN, lexer.TOKEN_RUNISOLATED,
+		lexer.TOKEN_PROCESS, lexer.TOKEN_REPORT:
+		return true
+	default:
+		return false
+	}
 }

@@ -5,13 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand"
 	"net/http"
 	"slices"
 	"strings"
-	"time"
-
-	"golang.org/x/time/rate"
 )
 
 type NVDResponse struct {
@@ -63,15 +59,7 @@ type SoftVerLookup struct {
 }
 
 type NVDClient struct {
-	maxRate int
-	ctx     context.Context
-	http    *http.Client
-}
-
-var NVDlimiter = rate.NewLimiter(rate.Every((time.Duration(rand.Intn(1000)+6000))*time.Millisecond), 1)
-
-func (n *NVDClient) GetMaxRate() int {
-	return n.maxRate
+	ctx context.Context
 }
 
 func (n *NVDClient) Lookup(prod string) ([]string, error) {
@@ -160,14 +148,12 @@ func (n *NVDClient) Fetch(link, subject string) ([]*CVEInfo, error) {
 }
 
 func (n *NVDClient) connectAndFetch(link string) ([]byte, error) {
-	NVDlimiter.Wait(n.ctx)
-
 	req, err := http.NewRequestWithContext(n.ctx, "GET", link, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := n.http.Do(req)
+	resp, err := http.Do(req)
 	if err != nil {
 		return nil, err
 	}

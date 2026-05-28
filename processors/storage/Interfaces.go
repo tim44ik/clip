@@ -1,6 +1,6 @@
 package storage
 
-import "clip/modules"
+import "clip/models/modules"
 
 type Encoder interface {
 	GetFileType() string

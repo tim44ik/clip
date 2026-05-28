@@ -8,6 +8,7 @@ import (
 )
 
 type Processor struct {
+	db       DB
 	cache    map[string]*Order
 	software []*Order
 	cve      []*Order
@@ -29,17 +30,16 @@ type CVEInfo struct {
 	Links       []string
 }
 
-func NewProcessor(cache map[string]*Order, software, cve []*Order) *Processor {
-	return &Processor{cache: cache, software: software, cve: cve}
+func NewProcessor(db DB, cache map[string]*Order, software, cve []*Order) *Processor {
+	return &Processor{db: db, cache: cache, software: software, cve: cve}
 }
 
-func (p *Processor) ProcessOutput(db DB, output string) {
-	outputDivided := strings.Split(output, "\n")
+func (p *Processor) ProcessOutput(data string) string {
+	outputDivided := strings.Split(data, "\n")
 
 	p.findCVEs(outputDivided)
 
-	maxGoroutines := db.GetMaxRate()
-	sem := make(chan struct{}, maxGoroutines)
+	sem := make(chan struct{}, len(outputDivided))
 	defer close(sem)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -52,7 +52,7 @@ func (p *Processor) ProcessOutput(db DB, output string) {
 			defer func() { <-sem }()
 			prod := strings.ToLower(strings.ReplaceAll(soft.name[1], " ", "_") + ":" + soft.name[2])
 			var err error
-			soft.cpe, err = db.Lookup(prod)
+			soft.cpe, err = p.db.Lookup(prod)
 			if err != nil {
 				soft.cpe = nil
 				return
@@ -77,7 +77,7 @@ func (p *Processor) ProcessOutput(db DB, output string) {
 				defer wg.Done()
 				defer func() { <-sem }()
 
-				resp, err := db.Fetch("https://services.nvd.nist.gov/rest/json/cves/2.0?cpeName=", cpe)
+				resp, err := p.db.Fetch("https://services.nvd.nist.gov/rest/json/cves/2.0?cpeName=", cpe)
 				if err != nil {
 					return
 				}
@@ -113,7 +113,7 @@ func (p *Processor) ProcessOutput(db DB, output string) {
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			info, err := db.Fetch("https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=", cve.name[0])
+			info, err := p.db.Fetch("https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=", cve.name[0])
 			if err != nil {
 				return
 			}
@@ -123,10 +123,11 @@ func (p *Processor) ProcessOutput(db DB, output string) {
 	}
 
 	wg.Wait()
+	return p.returnResults(data)
 }
 
-func (p *Processor) PrintResults() string {
-	output := []string{"\nProcessing results:"}
+func (p *Processor) returnResults(data string) string {
+	output := []string{fmt.Sprintf("\nProcessing results for %s:", data)}
 	if len(p.software) != 0 {
 		for _, soft := range p.software {
 			if soft.cve != nil {
@@ -204,33 +205,33 @@ func (p *Processor) findCVEs(lines []string) {
 
 func appendOutput(outputListed []string, cve *CVEInfo) []string {
 	outputListed = append(outputListed, fmt.Sprintf(
-		"\n    Description:\n%s",
+		"\nDescription:\n%s",
 		cve.Description,
 	),
 	)
 
 	if cve.SeverityV40 != "" {
 		outputListed = append(outputListed, fmt.Sprintf(
-			"    Severity calculated with V40 metrics: %s",
+			"Severity calculated with V40 metrics: %s",
 			cve.SeverityV40))
 	}
 	if cve.SeverityV31 != "" {
 		outputListed = append(outputListed, fmt.Sprintf(
-			"    Severity calculated with V31 metrics: %s",
+			"Severity calculated with V31 metrics: %s",
 			cve.SeverityV31))
 	}
 	if cve.SeverityV30 != "" {
 		outputListed = append(outputListed, fmt.Sprintf(
-			"    Severity calculated with V30 metrics: %s",
+			"Severity calculated with V30 metrics: %s",
 			cve.SeverityV30))
 	}
 	if cve.SeverityV2 != "" {
 		outputListed = append(outputListed, fmt.Sprintf(
-			"    Severity calculated with V2 metrics: %s",
+			"Severity calculated with V2 metrics: %s",
 			cve.SeverityV2))
 	}
 
-	outputListed = append(outputListed, "    Links:")
+	outputListed = append(outputListed, "Links:")
 	outputListed = append(outputListed, cve.Links...)
 
 	return outputListed

@@ -24,20 +24,27 @@ func NewLexer(input string) *Lexer {
 	l.kw["true"] = TOKEN_TRUE
 	l.kw["false"] = TOKEN_FALSE
 	l.kw["if"] = TOKEN_IF
+	l.kw["and"] = TOKEN_AND
+	l.kw["or"] = TOKEN_OR
+	l.kw["not"] = TOKEN_NOT
 	l.kw["then"] = TOKEN_THEN
 	l.kw["else"] = TOKEN_ELSE
 	l.kw["end"] = TOKEN_END
 	l.kw["for"] = TOKEN_FOR
-	l.kw["do"] = TOKEN_DO
-	l.kw["print"] = TOKEN_PRINT
-	l.kw["contains"] = TOKEN_CONTAINS
-	l.kw["replace"] = TOKEN_REPLACE
-	l.kw["split"] = TOKEN_SPLIT
-	l.kw["len"] = TOKEN_LEN
-	l.kw["append"] = TOKEN_APPEND
-	l.kw["fields"] = TOKEN_FIELDS
 	l.kw["break"] = TOKEN_BREAK
 	l.kw["continue"] = TOKEN_CONTINUE
+	l.kw["do"] = TOKEN_DO
+	l.kw["Print"] = TOKEN_PRINT
+	l.kw["Contains"] = TOKEN_CONTAINS
+	l.kw["Replace"] = TOKEN_REPLACE
+	l.kw["Split"] = TOKEN_SPLIT
+	l.kw["Len"] = TOKEN_LEN
+	l.kw["Append"] = TOKEN_APPEND
+	l.kw["Fields"] = TOKEN_FIELDS
+	l.kw["Run"] = TOKEN_RUN
+	l.kw["RunIsolated"] = TOKEN_RUNISOLATED
+	l.kw["Process"] = TOKEN_PROCESS
+	l.kw["Report"] = TOKEN_REPORT
 	l.readChar()
 	return l
 }

@@ -2,7 +2,7 @@ package frontend
 
 import (
 	"clip/locales"
-	"clip/modules"
+	"clip/models/modules"
 
 	"image/color"
 	"strings"
