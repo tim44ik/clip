@@ -27,7 +27,7 @@
   { "id": "enter_new_module_name", "translation": "Введите название" },
   { "id": "add_new_module", "translation": "Добавить новый модуль" },
   { "id": "cancelled", "translation": "Отменено" },
-  { "id": "report_file_type_error", "translation": "Формат файла отчета не выбран" },
+  { "id": "report_file_type_error", "translation": "Формат файла отчета не некорректен" },
   { "id": "report_file_writing_error", "translation": "Ошибка записи отчета" },
   { "id": "apply", "translation": "Применить" },
   { "id": "choose_language", "translation": "Выберите язык" },

@@ -9,6 +9,7 @@ import (
 
 type Processor struct {
 	db       DB
+	mu       sync.RWMutex
 	cache    map[string]*Order
 	software []*Order
 	cve      []*Order
@@ -16,17 +17,13 @@ type Processor struct {
 
 type Order struct {
 	name []string
-	cpe  []string
 	cve  []*CVEInfo
 }
 
 type CVEInfo struct {
 	ID          string
 	Description string
-	SeverityV40 string
-	SeverityV31 string
-	SeverityV30 string
-	SeverityV2  string
+	Severity    string
 	Links       []string
 }
 
@@ -42,7 +39,6 @@ func (p *Processor) ProcessOutput(data string) string {
 	sem := make(chan struct{}, len(outputDivided))
 	defer close(sem)
 	var wg sync.WaitGroup
-	var mu sync.Mutex
 
 	for _, soft := range p.software {
 		wg.Add(1)
@@ -50,61 +46,22 @@ func (p *Processor) ProcessOutput(data string) string {
 		go func() {
 			defer wg.Done()
 			defer func() { <-sem }()
-			prod := strings.ToLower(strings.ReplaceAll(soft.name[1], " ", "_") + ":" + soft.name[2])
+			ok := p.Get(soft)
+			if ok {
+				return
+			}
+
 			var err error
-			soft.cpe, err = p.db.Lookup(prod)
+			soft.cve, err = p.db.GetPData(soft.name[1], soft.name[2])
 			if err != nil {
-				soft.cpe = nil
+				soft.cve = nil
 				return
 			}
+			p.Set(soft.name[0], soft.cve)
 		}()
 	}
 
-	wg.Wait()
-
-	for _, soft := range p.software {
-		if soft.cpe == nil {
-			continue
-		}
-
-		seenCVEs := make(map[string]*CVEInfo)
-		for _, cpe := range soft.cpe {
-			wg.Add(1)
-
-			sem <- struct{}{}
-
-			go func() {
-				defer wg.Done()
-				defer func() { <-sem }()
-
-				resp, err := p.db.Fetch("https://services.nvd.nist.gov/rest/json/cves/2.0?cpeName=", cpe)
-				if err != nil {
-					return
-				}
-
-				for _, cve := range resp {
-					if _, ok := seenCVEs[cve.ID]; !ok {
-						mu.Lock()
-						seenCVEs[cve.ID] = cve
-						mu.Unlock()
-					}
-					if _, ok := p.cache[cve.ID]; !ok {
-						mu.Lock()
-						p.cache[cve.ID].cve = append(p.cache[cve.ID].cve, cve)
-						mu.Unlock()
-					}
-				}
-			}()
-		}
-
-		wg.Wait()
-
-		for _, value := range seenCVEs {
-			soft.cve = append(soft.cve, value)
-		}
-	}
-
-	for _, cve := range p.cve {
+	for _, cveData := range p.cve {
 		wg.Add(1)
 
 		sem <- struct{}{}
@@ -112,18 +69,37 @@ func (p *Processor) ProcessOutput(data string) string {
 		go func() {
 			defer wg.Done()
 			defer func() { <-sem }()
-
-			info, err := p.db.Fetch("https://services.nvd.nist.gov/rest/json/cves/2.0?cveId=", cve.name[0])
-			if err != nil {
+			ok := p.Get(cveData)
+			if ok {
 				return
 			}
 
-			cve.cve = append(cve.cve, info...)
+			var err error
+			cveData.cve, err = p.db.GetVulnerabilities(cveData.name[0])
+			if err != nil {
+				cveData.cve = nil
+				return
+			}
+
+			p.Set(cveData.name[0], cveData.cve)
 		}()
 	}
-
 	wg.Wait()
 	return p.returnResults(data)
+}
+
+func (p *Processor) Get(soft *Order) bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	val, ok := p.cache[soft.name[0]]
+	soft.cve = val.cve
+	return ok
+}
+
+func (p *Processor) Set(key string, value []*CVEInfo) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.cache[key].cve = value
 }
 
 func (p *Processor) returnResults(data string) string {
@@ -137,7 +113,7 @@ func (p *Processor) returnResults(data string) string {
 						soft.name[0]))
 
 				for _, cve := range soft.cve {
-					output = append(output, "\n    "+cve.ID)
+					output = append(output, "\n"+cve.ID)
 
 					output = appendOutput(output, cve)
 				}
@@ -181,7 +157,7 @@ func (p *Processor) findCVEs(lines []string) {
 		}
 
 		for _, f := range foundSoft {
-			if len(f[1]) <= 2 || f[2] == "" {
+			if len([]rune(f[1])) <= 2 || f[2] == "" {
 				continue
 			}
 
@@ -210,26 +186,9 @@ func appendOutput(outputListed []string, cve *CVEInfo) []string {
 	),
 	)
 
-	if cve.SeverityV40 != "" {
-		outputListed = append(outputListed, fmt.Sprintf(
-			"Severity calculated with V40 metrics: %s",
-			cve.SeverityV40))
-	}
-	if cve.SeverityV31 != "" {
-		outputListed = append(outputListed, fmt.Sprintf(
-			"Severity calculated with V31 metrics: %s",
-			cve.SeverityV31))
-	}
-	if cve.SeverityV30 != "" {
-		outputListed = append(outputListed, fmt.Sprintf(
-			"Severity calculated with V30 metrics: %s",
-			cve.SeverityV30))
-	}
-	if cve.SeverityV2 != "" {
-		outputListed = append(outputListed, fmt.Sprintf(
-			"Severity calculated with V2 metrics: %s",
-			cve.SeverityV2))
-	}
+	outputListed = append(outputListed, fmt.Sprintf(
+		"Severity calculated with V40 metrics: %s",
+		cve.Severity))
 
 	outputListed = append(outputListed, "Links:")
 	outputListed = append(outputListed, cve.Links...)

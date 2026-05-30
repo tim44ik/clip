@@ -25,7 +25,7 @@ type Environment struct {
 	stdInW     io.WriteCloser
 	report     *reporter.Report
 	client     *outputprocessor.Processor
-	outputter  func(string)
+	outputter  func(any)
 	moduleName string
 	vars       map[string]interface{}
 }
@@ -33,7 +33,7 @@ type Environment struct {
 type BreakSignal struct{}
 type ContinueSignal struct{}
 
-func NewEnvironment(ctx context.Context, report *reporter.Report, name string, outputter func(string)) *Environment {
+func NewEnvironment(ctx context.Context, report *reporter.Report, name string, outputter func(any)) *Environment {
 	return &Environment{ctx: ctx, vars: make(map[string]interface{}), report: report, moduleName: name, outputter: outputter}
 }
 
@@ -51,6 +51,9 @@ func (env *Environment) set(name string, value interface{}) {
 func (env *Environment) Eval(prog *ast.Program) {
 	defer env.close()
 	for _, stmt := range prog.Statements {
+		if env.ctx.Err() != nil {
+			return
+		}
 		env.evalStmt(stmt, false)
 	}
 }
@@ -153,7 +156,8 @@ func (env *Environment) evalStmt(stmt ast.Stmt, inLoop bool) {
 		for i := range s.Expr {
 			val = append(val, env.evalExpr(s.Expr[i]))
 		}
-		fmt.Println(val...)
+
+		env.outputter(val)
 	case *ast.ExprStmt:
 		env.evalExpr(s.Expr)
 	case *ast.IfStmt:
@@ -263,6 +267,8 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 			default:
 				panic("унарный минус только для чисел")
 			}
+		case lexer.TOKEN_NOT:
+			return !isTruthy(right)
 		default:
 			panic("неизвестный унарный оператор")
 		}
@@ -271,9 +277,14 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 		right := env.evalExpr(e.Right)
 		switch e.Operator {
 		case lexer.TOKEN_AND:
-			return isTruthy(left) == isTruthy(right)
+			return isTruthy(left) && isTruthy(right)
 		case lexer.TOKEN_OR:
-			return isTruthy(left) || isTruthy(right)
+			leftVal := env.evalExpr(e.Left)
+			if isTruthy(leftVal) {
+				return true
+			}
+			rightVal := env.evalExpr(e.Right)
+			return isTruthy(rightVal)
 		case lexer.TOKEN_PLUS:
 			return add(left, right)
 		case lexer.TOKEN_MINUS:
@@ -301,7 +312,7 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 		}
 	case *ast.CallExpr:
 		switch e.Func {
-		case "Contains":
+		case "contains":
 			if len(e.Args) != 2 {
 				panic("contains требует 2 аргумента")
 			}
@@ -317,7 +328,7 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 				panic("wrong value type")
 			}
 
-		case "Replace":
+		case "replace":
 			if len(e.Args) != 3 {
 				panic("replace требует 3 аргумента")
 			}
@@ -345,7 +356,7 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 				panic("неправильный тип данных в replace")
 			}
 
-		case "Split":
+		case "split":
 			if len(e.Args) != 2 {
 				panic("split требует 2 аргумента: строка, разделитель")
 			}
@@ -357,7 +368,7 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 				res[i] = p
 			}
 			return res
-		case "Len":
+		case "len":
 			if len(e.Args) != 1 {
 				panic("len требует 1 аргумент")
 			}
@@ -370,7 +381,7 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 			default:
 				panic("len применим только к массиву или строке")
 			}
-		case "Append":
+		case "append":
 			if len(e.Args) < 2 {
 				panic("append требует хотя бы один аргумент")
 			}
@@ -386,7 +397,7 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 				newElems = append(newElems, env.evalExpr(e.Args[i]))
 			}
 			return newElems
-		case "Fields":
+		case "fields":
 			if len(e.Args) != 1 {
 				panic("fields требует один аргумент")
 			}
@@ -398,7 +409,7 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 				res = append(res, f)
 			}
 			return res
-		case "Run":
+		case "run":
 			if len(e.Args) < 2 {
 				panic("run требует 2 и более аргументов")
 			}
@@ -416,7 +427,7 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 			varg := toString(env.evalExpr(e.Args[0]))
 			env.isVerbose(varg, output)
 			return output.String()
-		case "RunIsolated":
+		case "runIsolated":
 			if len(e.Args) < 2 {
 				panic("run требует 2 и более аргументов")
 			}

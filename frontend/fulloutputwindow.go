@@ -11,10 +11,10 @@ import (
 
 func (a *ClipWindow) fullOutput() {
 	a.applyModuleChanges()
-	input := widget.NewMultiLineEntry()
-	input.Disabled()
-	input.Text = a.selectedModule.Output
-	scroll := container.NewVScroll(input)
+	output := widget.NewMultiLineEntry()
+	output.Disabled()
+	output.Text = a.selectedModule.Output
+	scroll := container.NewVScroll(output)
 	addmoduleDialog := dialog.NewCustomConfirm(
 		locales.T(a.modules.CurrentLang, "full_output"),
 		locales.T(a.modules.CurrentLang, "ok"),

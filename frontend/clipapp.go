@@ -1,6 +1,7 @@
 package frontend
 
 import (
+	"clip/config"
 	"clip/engine/scenario"
 	appErrors "clip/errors"
 	"clip/locales"
@@ -14,6 +15,7 @@ import (
 	_ "embed"
 	"fmt"
 	"image/color"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -26,6 +28,7 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+	"gorm.io/gorm"
 )
 
 type ClipWindow struct {
@@ -42,6 +45,8 @@ type ClipWindow struct {
 	encryptionType encrypter.Encrypter
 
 	Window fyne.Window
+
+	database *gorm.DB
 
 	threads string
 
@@ -72,8 +77,14 @@ type ClipWindow struct {
 }
 
 func CreateWindow() (a *ClipWindow) {
-	a = &ClipWindow{modules: &modules.ClipModules{}}
-	var err error
+	db, err := config.Connect()
+	if err != nil {
+		log.Fatal("Failed to connect:", err)
+		return
+	}
+
+	a = &ClipWindow{modules: &modules.ClipModules{}, database: db}
+
 	err, a.langs = locales.Init()
 	if err != nil {
 		return
@@ -270,7 +281,7 @@ func (a *ClipWindow) runner(scenario *scenario.Scenario, ctx context.Context) {
 	}()
 
 	report := scenario.Execute(errCh, ctx,
-		func(s string, m *modules.Module) {
+		func(s any, m *modules.Module) {
 			fyne.DoAndWait(func() { a.addModuleOutput(m, s) })
 		})
 
@@ -377,8 +388,15 @@ func (a *ClipWindow) refreshModuleGui() {
 	a.elms.mainButton.Refresh()
 }
 
-func (a *ClipWindow) addModuleOutput(module *modules.Module, line string) {
-	module.Output += line
+func (a *ClipWindow) addModuleOutput(module *modules.Module, line any) {
+	switch line := line.(type) {
+	case []interface{}:
+		for i := range line {
+			module.Output += fmt.Sprintf("\n%v", line[i])
+		}
+	default:
+		module.Output += fmt.Sprintf("\n%v", line)
+	}
 	if module == a.selectedModule {
 		a.elms.moduleOutputEntryMutex.Lock()
 		defer a.elms.moduleOutputEntryMutex.Unlock()
@@ -499,49 +517,6 @@ func (a *ClipWindow) fullRefresh() {
 									a.selectModule(a.modules.MainModule)
 
 									a.skip = true
-								})
-							},
-						)
-					}),
-				fyne.NewMenuItem(locales.T(a.modules.CurrentLang, "load_new_window"),
-					func() {
-						a.applyModuleChanges()
-
-						errChan := make(chan error)
-
-						ctx, cancel := context.WithCancel(context.Background())
-
-						go a.listenErrors(ctx, cancel, errChan)
-
-						f := filemanager.NewFileManager(
-							a.modules.CurrentLang,
-							a.profiles.path,
-							a.Window,
-							a.profiles.exists,
-						)
-
-						f.LoadProfile(
-							errChan,
-							func(mods modules.ClipModules, path string, enc encrypter.Encrypter) {
-
-								if ctx.Err() != nil {
-									return
-								}
-
-								newWindow := CreateWindow()
-
-								newWindow.modules = &mods
-								newWindow.profiles.path = path
-								newWindow.encryptionType = enc
-								newWindow.profiles.exists = true
-								newWindow.skip = true
-
-								newWindow.refreshModuleGui()
-								newWindow.fullRefresh()
-								newWindow.selectModule(newWindow.modules.MainModule)
-
-								fyne.Do(func() {
-									newWindow.Window.Show()
 								})
 							},
 						)

@@ -26,7 +26,7 @@ func NewScenario(main string, thread int, module [][]*modules.Module) *Scenario 
 	return &Scenario{Main: main, ThreadNumber: thread, ModulesStruct: module}
 }
 
-func (s *Scenario) Execute(errCh chan<- error, ctx context.Context, outputter func(string, *modules.Module)) *reporter.Report {
+func (s *Scenario) Execute(errCh chan<- error, ctx context.Context, outputter func(any, *modules.Module)) *reporter.Report {
 	var wg sync.WaitGroup
 
 	semaphore := make(chan struct{}, s.ThreadNumber)
@@ -41,7 +41,7 @@ func (s *Scenario) Execute(errCh chan<- error, ctx context.Context, outputter fu
 					return
 				}
 
-				localoutputter := func(s string) {
+				localoutputter := func(s any) {
 					outputter(s, m)
 				}
 

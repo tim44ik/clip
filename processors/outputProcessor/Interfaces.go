@@ -5,8 +5,8 @@ import (
 )
 
 type DB interface {
-	Lookup(string) ([]string, error)
-	Fetch(string, string) ([]*CVEInfo, error)
+	GetPData(string, string) ([]*CVEInfo, error)
+	GetVulnerabilities(string) ([]*CVEInfo, error)
 }
 
 func NewDB(dbtype string, ctx context.Context) DB {
