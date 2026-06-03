@@ -27,16 +27,15 @@ RUN apt-get update && apt-get install -y locales && \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
     locale-gen
 
-ENV LANG=en_US.UTF-8
-ENV LANGUAGE=en_US:en
-ENV LC_ALL=en_US.UTF-8
-
-ENV DISPLAY=:99
-ENV POSTGRES_HOST=db
-ENV POSTGRES_DB=cve_db
-ENV POSTGRES_USER=postgres
-ENV POSTGRES_PASSWORD=postgres
-ENV POSTGRES_PORT=5432
+ENV LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8 \
+    DISPLAY=:99 \
+    POSTGRES_HOST=db \
+    POSTGRES_DB=cve_db \
+    POSTGRES_USER=postgres \
+    POSTGRES_PASSWORD=postgres \
+    POSTGRES_PORT=5432
 
 RUN apt-get update && apt-get install -y \
     kali-linux-headless \
@@ -58,10 +57,26 @@ RUN apt-get update && apt-get install -y \
     rm v1.4.0.tar.gz && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+Xvfb :99 -screen 0 1280x720x24 &\n\
+export DISPLAY=:99\n\
+\n\
+sleep 2\n\
+\n\
+x11vnc -display :99 -forever -nopw -shared -xkb -rfbport 5900 &\n\
+\n\
+/opt/noVNC/utils/novnc_proxy --listen 6080 --vnc localhost:5900 &\n\
+\n\
+sleep 3\n\
+\n\
+/app/clip-app &\n\
+\n\
+wait' > /entrypoint.sh && chmod +x /entrypoint.sh
+
 WORKDIR /app
 COPY --from=builder /clip-app /app/clip-app
-COPY cmd/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
 
 RUN useradd -m -s /bin/bash fyne && chown -R fyne:fyne /app
 

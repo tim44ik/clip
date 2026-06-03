@@ -1,8 +1,6 @@
 services:
   db:
-    build:
-      context: .
-      dockerfile: dockerfile.db
+    image: tim44ik/clip-db:latest
     environment:
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_USER=postgres
@@ -17,9 +15,7 @@ services:
     restart: unless-stopped
 
   app:
-    build:
-      context: .
-      dockerfile: dockerfile.app
+    image: tim44ik/clip-app:latest
     depends_on:
       db:
         condition: service_healthy
