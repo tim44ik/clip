@@ -1,94 +1,144 @@
 # clip
-an utility to run multi and single task scenarios in cli
 
-## Interface
+**clip** is a utility for running single‑task and multi‑task scenarios with a graphical user interface (GUI) built on [Fyne](https://fyne.io/).  
+It allows you to load, edit, and execute modules (scripts written in an internal scripting language), control concurrency, save/load encrypted configurations, and generate reports.
 
-The top panel contains four buttons, each of which opens a dropdown menu.
+## Core Idea
 
-### Folder Button Menu
+Clip helps you automate sequences of actions, analyse data, and produce reports.  
+You create a **scenario** that consists of a **main module** and **child modules**, each containing code in the embedded scripting language.
 
-The button with the folder icon opens a menu with the following options:
+Modules are executed in the order defined by `queue()`. The **threads** setting controls how many modules from the same queue (group) can run **in parallel**.  
+This allows you to fine‑tune concurrency while preserving the overall execution order.
 
-* **Load Script** — opens a folder selection dialog for choosing scripts to be imported into the application.
-* **Load** — opens a file system dialog with a filter for configuration files (currently `.json`, but more formats can be added). If the configuration is encrypted, a password input dialog is displayed.
-* **Load in New Window** — performs the same actions but loads the profile in a new window.
-* **Save** — opens dialogs for selecting file format, encryption type, and password (if needed). If the profile was previously saved or loaded, the file is overwritten; otherwise, a file dialog is shown.
-* **Save As** — opens a file system dialog to save the profile to a new location.
+Key features:
 
-### Scenario Control
+- Run scripts with variables, loops, conditionals, and built‑in functions (CVE/CPE database queries, external command execution, string processing).
+- Parallel execution with configurable thread limits.
+- Interactive GUI to manage scenarios (load, save, edit, start, interrupt).
+- Generate reports (e.g., PDF) from execution results.
+- Encrypted configuration files.
+- **Designed to be run inside Docker** – the application always works with a pre‑filled PostgreSQL database (CVE/CPE data) and a full Kali Linux toolchain.
 
-The second button allows you to:
+## Building & Running
 
-* Start a scenario
-* Interrupt a scenario
-* Interrupt a scenario and generate a report
+Clip is meant to be used as a **Docker‑based solution**.  
+The repository provides `Dockerfile.db`, `Dockerfile.app`, and `docker-compose.yml` to launch a self‑contained environment with Kali Linux, all necessary CLI tools, and a pre‑filled vulnerability database.
 
-**Interrupt Scenario and Generate Report** can also create a PDF from a previous run without executing the scenario again.
+### Run with Docker
 
-### Language
+```bash
+docker compose up -d
+```
 
-The third button opens the language selection window.
+After starting, open your browser at `http://localhost:6080/vnc.html` – you will see the clip GUI.
 
-### Exit
+There is **no native build outside Docker** – the architecture relies on the database and the Kali environment being present.
 
-The fourth button closes the application window.
+## User Interface
 
----
+### Top Panel
+
+#### Folder Icon Menu
+
+- **Load Script** – Open a directory chooser to import scripts.
+- **Load** – Load a scenario configuration (JSON format; encrypted files are supported).
+- **Save** – Save the current scenario. First save asks for format, encryption, and password; subsequent saves overwrite the existing file.
+- **Save As** – Save the scenario to a new location.
+
+#### Scenario Control Button
+
+- **Start** – Begin execution.
+- **Interrupt** – Stop execution.
+
+#### Language Button
+
+Opens the language selection window (i18n support).
+
+#### Exit Button
+
+Closes the application.
 
 ### Central Panel
 
-Central panel is divided in two:
-* Modules list on the left side
-* Input and output entry
----
+Split into two sections:
+
+- **Module list** (left) – shows all modules with their names.
+- **Input/Output area** (right) – displays the output of the selected module.
 
 ### Lower Panel
 
-Checkboxes in the lower panel control report generation and output processing:
+- **Threads Number** – Maximum number of goroutines (modules) that run **in parallel** inside a single queue.
+- **View Full Output** – Opens a separate window showing the complete output captured at the moment the button is clicked (no live updates). This works around Fyne’s performance issues when rendering long logs – the main output view is limited to 14 lines.
 
-* If enabled on the main screen, they apply to all modules
-* Disabling them affects all modules accordingly
+### Module Actions (context menu or buttons)
 
-### Generate Report
-
-* After execution, opens a report format selection (currently only PDF)
-* After execution, opens a file saving dialog
-
-### Process Output
-
-* Disabled if **Generate Report** is not selected
-* If enabled:
-
-  * After execution, a database selection window appears
-  * The program performs a search based on CVE and product+version patterns
-  * Information is retrieved from the selected database using regex matching
-
----
-
-### Threads
-
-**Threads Number** defines how many goroutines (modules) run simultaneously.
-Execution order defined by `queue()` is preserved.
-
----
-
-### Output
-
-**View Full Output** opens a window displaying the complete output at the moment it is created (no live updates).
-This feature was introduced to work around Fyne’s lack of scroll tracking. In earlier versions, the UI experienced lag because it rendered all output, including content outside the visible area.
-
-To address this, the main output view was limited to 14 lines, and the **View Full Output** option was added.
-
----
-
-### Module Actions
-
-* **Edit** — opens a window to rename the module
-* **Delete** — removes the module and returns to the main screen
-
----
+- **Edit** – Rename the module.
+- **Delete** – Remove the module from the scenario.
 
 ### Add Module
 
-**Add Module** opens a creation window and returns user to the new module screen after saving.
+- **Add Module** – Opens a creation window. After saving, the user returns to the new module’s editing screen.
 
+## Scenario Format
+
+Scenarios are saved as JSON according to the following structure:
+
+```go
+type Module struct {
+    Name    string `json:"name"`
+    Content string `json:"content"`
+    Output  string `json:"-"` // not stored, only runtime
+}
+
+type ClipModules struct {
+    MainModule   *Module   `json:"mainModule"`
+    ChildModules []*Module `json:"childModules"`
+    CurrentLang  string    `json:"currentLang"`
+}
+```
+
+Example:
+
+```json
+{
+  "mainModule": {
+    "name": "main",
+    "content": "%a = \"hello\"\nprint(%a)"
+  },
+  "childModules": [
+    {
+      "name": "child1",
+      "content": "print(\"child1 output\")"
+    }
+  ],
+  "currentLang": "en"
+}
+```
+
+- The **MainModule** is executed first, followed by the **ChildModules** in the order they appear in the array.
+- The `Output` field is used at runtime and never persisted to the JSON file.
+
+## Scripting Language
+
+The embedded interpreter supports:
+
+- Variables prefixed with `%` (numbers, strings, arrays).
+- Arithmetic: `+ - * / %`.
+- Comparisons: `== != < > <= >=`.
+- Logical operators: `and`, `or`, `not`.
+- Conditional: `if ... then ... else ... end`.
+- Loop: `for init; cond; post do ... end` with `break` and `continue`.
+- Built‑in functions:  
+  `print`, `len`, `append`, `split`, `fields`, `contains`, `replace`,  `str`, `int`
+  `run` (execute shell commands with persistent context),
+  `runIsolated` (execute shell commands without persistent context)  
+  `process` (query the CVE/CPE database),  
+  `report` (generate a report).
+- Modules run in separate environments but can share global state (report, database, main module content).
+
+[full language documentation](docs/lang_doc.md)
+
+## License
+
+[MIT](LICENSE)

@@ -1,0 +1,74 @@
+FROM golang:1.26.1-bookworm AS builder
+
+RUN apt-get update && apt-get install -y \
+    libgl1-mesa-dev \
+    libx11-dev \
+    libxrandr-dev \
+    libxxf86vm-dev \
+    libxi-dev \
+    libxcursor-dev \
+    libxinerama-dev \
+    xorg-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /clip
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+
+RUN go install fyne.io/fyne/v2/cmd/fyne@latest && \
+    fyne bundle -o bundled.go assets/ || true
+
+RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o /clip-app ./cmd
+
+FROM kalilinux/kali-rolling
+
+RUN apt-get update && apt-get install -y locales && \
+    echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
+    locale-gen
+
+ENV LANG=en_US.UTF-8
+ENV LANGUAGE=en_US:en
+ENV LC_ALL=en_US.UTF-8
+
+ENV DISPLAY=:99
+ENV POSTGRES_HOST=db
+ENV POSTGRES_DB=cve_db
+ENV POSTGRES_USER=postgres
+ENV POSTGRES_PASSWORD=postgres
+ENV POSTGRES_PORT=5432
+
+RUN apt-get update && apt-get install -y \
+    kali-linux-headless \
+    libgl1-mesa-dev \
+    libx11-dev \
+    libxrandr-dev \
+    libxxf86vm-dev \
+    libxi-dev \
+    libxcursor-dev \
+    libxinerama-dev \
+    xorg \
+    x11vnc \
+    xvfb \
+    fluxbox \
+    wget \
+    postgresql-client \
+    && wget https://github.com/novnc/noVNC/archive/refs/tags/v1.4.0.tar.gz && \
+    tar xzf v1.4.0.tar.gz && mv noVNC-1.4.0 /opt/noVNC && \
+    rm v1.4.0.tar.gz && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY --from=builder /clip-app /app/clip-app
+COPY cmd/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+RUN useradd -m -s /bin/bash fyne && chown -R fyne:fyne /app
+
+RUN mkdir /shared && chown fyne:fyne /shared
+VOLUME /shared
+
+EXPOSE 6080
+
+USER fyne
+ENTRYPOINT ["/entrypoint.sh"]

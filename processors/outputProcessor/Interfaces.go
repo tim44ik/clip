@@ -2,6 +2,8 @@ package outputprocessor
 
 import (
 	"context"
+
+	"gorm.io/gorm"
 )
 
 type DB interface {
@@ -9,11 +11,12 @@ type DB interface {
 	GetVulnerabilities(string) ([]*CVEInfo, error)
 }
 
-func NewDB(dbtype string, ctx context.Context) DB {
+func NewDB(database *gorm.DB, dbtype string, ctx context.Context) DB {
 	switch dbtype {
 	case "NVD":
 		return &NVDClient{
-			ctx: ctx,
+			ctx:      ctx,
+			database: database,
 		}
 	default:
 		return nil

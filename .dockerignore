@@ -8,9 +8,9 @@ Dockerfile
 .dockerignore
 
 # Artefacts
-output/
-cveData/
-dist/
+tests/
+docs/
+shared/
 *.exe
 *.dll
 

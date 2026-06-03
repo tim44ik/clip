@@ -1,0 +1,45 @@
+services:
+  db:
+    build:
+      context: .
+      dockerfile: dockerfile.db
+    environment:
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=cve_db
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: dockerfile.app
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - POSTGRES_HOST=db
+      - POSTGRES_DB=cve_db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_PORT=5432
+      - DISPLAY=:99
+      - LANG=C.UTF-8
+      - LC_ALL=C.UTF-8
+    volumes:
+      - ./shared:/shared
+    ports:
+      - "6080:6080"
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    restart: unless-stopped
+
+volumes:
+  pgdata:

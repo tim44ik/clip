@@ -9,13 +9,23 @@ import (
 )
 
 func Connect() (*gorm.DB, error) {
+	host := os.Getenv("POSTGRES_HOST")
+	if host == "" {
+		host = "localhost"
+	}
+	port := os.Getenv("POSTGRES_PORT")
+	if port == "" {
+		port = "5432"
+	}
+	user := os.Getenv("POSTGRES_USER")
+	dbname := os.Getenv("POSTGRES_DB")
+	password := os.Getenv("POSTGRES_PASSWORD")
+
+	os.Setenv("LANG", "C.UTF-8")
+	os.Setenv("LC_ALL", "C.UTF-8")
 	dsn := fmt.Sprintf(
 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-		os.Getenv("DB_HOST"),
-		os.Getenv("DB_PORT"),
-		os.Getenv("DB_USER"),
-		os.Getenv("DB_PASSWORD"),
-		os.Getenv("DB_NAME"),
+		host, port, user, password, dbname,
 	)
 	return gorm.Open(postgres.Open(dsn), &gorm.Config{})
 }

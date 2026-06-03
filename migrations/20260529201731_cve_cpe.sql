@@ -5,8 +5,8 @@ CREATE TABLE IF NOT EXISTS cpe_cve (
     cve_id TEXT REFERENCES cve(id) ON DELETE CASCADE,
     PRIMARY KEY (cpe_name, cve_id)
 );
-CREATE INDEX IF NOT EXISTS idx_cpe_products_product ON cpe_cve(cpe_name);
-CREATE INDEX IF NOT EXISTS idx_cpe_products_product ON cpe_cve(cpe_id);
+CREATE INDEX IF NOT EXISTS idx_cpe_cve_cpe_name ON cpe_cve(cpe_name);
+CREATE INDEX IF NOT EXISTS idx_cpe_cve_cve_id ON cpe_cve(cve_id);
 -- +goose Down
 SELECT 'down SQL query';
 DROP TABLE IF EXISTS cpe_cve;

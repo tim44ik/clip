@@ -1,0 +1,47 @@
+FROM postgres:15 AS db-builder
+
+RUN apt-get update && apt-get install -y python3 python3-pip python3-psycopg git git-lfs wget && \
+    wget https://github.com/pressly/goose/releases/download/v3.14.0/goose_linux_x86_64 && \
+    chmod +x goose_linux_x86_64 && mv goose_linux_x86_64 /usr/local/bin/goose && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /tmp
+COPY fillDatabase/ ./fillDatabase/
+COPY migrations/ ./migrations/
+
+RUN git lfs install && \
+    git clone https://github.com/tim44ik/DataFeeds.git /tmp/DataFeeds && \
+    cd /tmp/DataFeeds && git lfs pull && \
+    rm -rf /tmp/DataFeeds/.git
+
+RUN mkdir -p /var/run/postgresql && chown postgres:postgres /var/run/postgresql
+
+USER postgres
+RUN /usr/lib/postgresql/15/bin/initdb -D /var/lib/postgresql/data && \
+    echo "host all all 0.0.0.0/0 md5" >> /var/lib/postgresql/data/pg_hba.conf && \
+    /usr/lib/postgresql/15/bin/pg_ctl -D /var/lib/postgresql/data start -l /tmp/postgres.log && \
+    while ! pg_isready; do sleep 1; done && \
+    psql -c "ALTER USER postgres WITH PASSWORD 'postgres';" && \
+    psql -c "CREATE DATABASE cve_db;" && \
+    goose -dir ./migrations postgres "host=localhost user=postgres dbname=cve_db password=postgres sslmode=disable" up && \
+    export POSTGRES_HOST=localhost POSTGRES_DB=cve_db POSTGRES_USER=postgres POSTGRES_PASSWORD=postgres && \
+    export CVE_FOLDER=/tmp/DataFeeds/cve && \
+    export CPE_FOLDER=/tmp/DataFeeds/cpe && \
+    python3 fillDatabase/cve.py && \
+    python3 fillDatabase/cpe.py && \
+    python3 fillDatabase/cve_cpe.py && \
+    /usr/lib/postgresql/15/bin/pg_ctl -D /var/lib/postgresql/data stop
+USER root
+
+RUN mkdir /dbdata && cp -r /var/lib/postgresql/data /dbdata && \
+    rm -rf /dbdata/log/*
+
+FROM postgres:15
+COPY --from=db-builder /dbdata/data /var/lib/postgresql/data
+RUN chown -R postgres:postgres /var/lib/postgresql/data && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+ENV POSTGRES_DB=cve_db
+ENV POSTGRES_USER=postgres
+ENV POSTGRES_PASSWORD=postgres
+EXPOSE 5432

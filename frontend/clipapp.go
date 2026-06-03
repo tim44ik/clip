@@ -62,12 +62,10 @@ type ClipWindow struct {
 		threadEntry            *widget.Entry
 		moduleContentEntry     *widget.Entry
 		moduleOutputEntry      *widget.Entry
-		createReportCheck      *widget.Check
-		processOutputCheck     *widget.Check
 		modulesPanel           *fyne.Container
 		fullOutputContainer    *fyne.Container
-		threadEntryBox         *fyne.Container
 		bottomPanelCheckboxes  *fyne.Container
+		threadEntryBox         *fyne.Container
 		editDeleteButtons      *fyne.Container
 		topPanel               *fyne.Container
 		activity               *widget.Activity
@@ -123,7 +121,6 @@ func (a *ClipWindow) buildWindow(app fyne.App) {
 	a.elms.fullOutputContainer = container.NewVBox()
 
 	a.elms.bottomPanelCheckboxes = container.NewVBox()
-
 	a.elms.threadEntryBox = container.NewVBox()
 
 	a.elms.editDeleteButtons = container.NewHBox()
@@ -161,12 +158,11 @@ func (a *ClipWindow) buildWindow(app fyne.App) {
 					container.NewBorder(
 						a.elms.title,
 						container.NewBorder(nil, nil, container.NewBorder(nil, a.elms.activity, nil, nil),
-							container.NewHBox(
-								container.NewCenter(
-									container.NewGridWrap(
-										fyne.NewSize(200, 15), a.elms.threadEntryBox,
-									),
-								), a.elms.bottomPanelCheckboxes, a.elms.fullOutputContainer,
+							container.NewHBox(container.NewGridWithRows(1,
+								container.NewGridWrap(
+									fyne.NewSize(200, 15), a.elms.threadEntryBox,
+								),
+								a.elms.fullOutputContainer),
 							),
 						),
 						nil,
@@ -177,7 +173,7 @@ func (a *ClipWindow) buildWindow(app fyne.App) {
 			),
 		),
 	)
-	a.Window.Resize(fyne.NewSize(900, 600))
+	a.Window.Resize(fyne.NewSize(1280, 720))
 	a.elms.activity.Hide()
 }
 
@@ -189,48 +185,13 @@ func (a *ClipWindow) selectModule(m *modules.Module) {
 
 	a.elms.moduleContentEntry.SetText(m.Content)
 
-	if a.elms.createReportCheck != nil && a.elms.processOutputCheck != nil {
-		if a.selectedModule == a.modules.MainModule {
-			for _, m := range a.modules.ChildModules {
-				if m.MakeReport.Do {
-					a.elms.createReportCheck.Checked = true
-					break
-				}
-				a.elms.createReportCheck.Checked = false
-			}
-			if a.elms.createReportCheck.Checked {
-				for _, m := range a.modules.ChildModules {
-					if m.MakeReport.Process {
-						a.elms.processOutputCheck.Checked = true
-						break
-					}
-					a.elms.processOutputCheck.Checked = false
-				}
-			}
-		} else {
-			if a.selectedModule.MakeReport.Do && a.selectedModule.MakeReport.Process {
-				a.elms.createReportCheck.Checked = true
-				a.elms.processOutputCheck.Checked = true
-				a.elms.processOutputCheck.Enable()
-			} else if a.selectedModule.MakeReport.Do && !a.selectedModule.MakeReport.Process {
-				a.elms.createReportCheck.Checked = true
-				a.elms.processOutputCheck.Checked = false
-				a.elms.processOutputCheck.Enable()
-			} else {
-				a.elms.createReportCheck.Checked = false
-				a.elms.processOutputCheck.Checked = false
-				a.selectedModule.MakeReport.Process = false
-			}
-		}
-	}
-
+	a.elms.threadEntryBox.Hidden = m == a.modules.MainModule
 	a.elms.fullOutputContainer.Hidden = m == a.modules.MainModule
 	a.elms.moduleOutputEntry.Hidden = m == a.modules.MainModule
 	a.elms.editDeleteButtons.Hidden = m == a.modules.MainModule
 
 	a.cutOutput()
 	a.elms.moduleOutputEntry.CursorRow = strings.LastIndexAny(a.elms.moduleOutputEntry.Text, "\n")
-	a.elms.bottomPanelCheckboxes.Refresh()
 }
 
 func (a *ClipWindow) applyModuleChanges() {
@@ -280,7 +241,7 @@ func (a *ClipWindow) runner(scenario *scenario.Scenario, ctx context.Context) {
 		}
 	}()
 
-	report := scenario.Execute(errCh, ctx,
+	report := scenario.Execute(a.database, errCh, ctx,
 		func(s any, m *modules.Module) {
 			fyne.DoAndWait(func() { a.addModuleOutput(m, s) })
 		})
@@ -657,13 +618,6 @@ func (a *ClipWindow) fullRefresh() {
 				fyne.NewMenuItem(locales.T(a.modules.CurrentLang, "change_language"),
 					func() { a.changeLanguageWindow() }))))
 
-	a.elms.topPanel.Add(
-		utility.NewDropButton(theme.CancelIcon(),
-			a.Window.Canvas(), fyne.NewMenu("Quit",
-				fyne.NewMenuItem(locales.T(a.modules.CurrentLang, "exit"),
-					func() { a.Window.Close() }),
-			)))
-
 	a.modules.MainModule.Name = locales.T(a.modules.CurrentLang, "main")
 	a.elms.mainButton.RemoveAll()
 	a.elms.mainButton.Add(widget.NewButton(
@@ -699,41 +653,6 @@ func (a *ClipWindow) fullRefresh() {
 		locales.T(a.modules.CurrentLang, "threads_number"),
 	)
 	a.elms.threadEntry.Text = a.threads
-
-	a.elms.processOutputCheck = widget.NewCheck(
-		locales.T(a.modules.CurrentLang, "process_output"),
-		func(b bool) {
-			a.selectedModule.MakeReport.Process = b
-			if a.selectedModule == a.modules.MainModule && a.elms.createReportCheck.Checked {
-				for _, m := range a.modules.ChildModules {
-					m.MakeReport.Process = b
-				}
-			}
-		})
-
-	a.elms.createReportCheck = widget.NewCheck(
-		locales.T(a.modules.CurrentLang, "make_report"),
-		func(b bool) {
-			a.selectedModule.MakeReport.Do = b
-			if !a.selectedModule.MakeReport.Do {
-				a.elms.processOutputCheck.SetChecked(false)
-				a.elms.processOutputCheck.Disable()
-			} else {
-				a.elms.processOutputCheck.Enable()
-			}
-			if a.selectedModule == a.modules.MainModule {
-				for _, m := range a.modules.ChildModules {
-					m.MakeReport.Do = b
-				}
-			}
-		})
-
-	a.elms.createReportCheck.Checked = a.selectedModule.MakeReport.Do
-	a.elms.processOutputCheck.Checked = a.selectedModule.MakeReport.Process
-
-	a.elms.bottomPanelCheckboxes.RemoveAll()
-	a.elms.bottomPanelCheckboxes.Add(a.elms.createReportCheck)
-	a.elms.bottomPanelCheckboxes.Add(a.elms.processOutputCheck)
 
 	a.elms.threadEntryBox.RemoveAll()
 	a.elms.threadEntryBox.Add(a.elms.threadEntry)

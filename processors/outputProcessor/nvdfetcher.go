@@ -17,7 +17,7 @@ type NVDClient struct {
 func (n *NVDClient) GetPData(product, version string) ([]*CVEInfo, error) {
 	var cpeList []nvd.CPE
 	err := n.database.WithContext(n.ctx).
-		Where("product = ? AND version = ?", product, version).
+		Where("product = ? AND ver = ?", product, version).
 		Find(&cpeList).Error
 	if err != nil {
 		return nil, fmt.Errorf("query CPE failed: %w", err)
@@ -72,7 +72,7 @@ func modelToCVEInfo(cv *nvd.CVE) *CVEInfo {
 	return &CVEInfo{
 		ID:          cv.ID,
 		Description: cv.Description,
-		Severity:    cv.Severity, // Severity определяется по наивысшему CVSS (как в парсинге)
+		Severity:    cv.Severity,
 		Links:       links,
 	}
 }

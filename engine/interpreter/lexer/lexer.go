@@ -40,6 +40,8 @@ func NewLexer(input string) *Lexer {
 	l.kw["split"] = TOKEN_SPLIT
 	l.kw["len"] = TOKEN_LEN
 	l.kw["append"] = TOKEN_APPEND
+	l.kw["str"] = TOKEN_STR
+	l.kw["int"] = TOKEN_INT
 	l.kw["fields"] = TOKEN_FIELDS
 	l.kw["run"] = TOKEN_RUN
 	l.kw["runIsolated"] = TOKEN_RUNISOLATED

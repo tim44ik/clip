@@ -12,10 +12,13 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 type Environment struct {
@@ -27,21 +30,22 @@ type Environment struct {
 	client     *outputprocessor.Processor
 	outputter  func(any)
 	moduleName string
+	database   *gorm.DB
 	vars       map[string]interface{}
 }
 
 type BreakSignal struct{}
 type ContinueSignal struct{}
 
-func NewEnvironment(ctx context.Context, report *reporter.Report, name string, outputter func(any)) *Environment {
-	return &Environment{ctx: ctx, vars: make(map[string]interface{}), report: report, moduleName: name, outputter: outputter}
+func NewEnvironment(database *gorm.DB, ctx context.Context, report *reporter.Report, name string, outputter func(any)) *Environment {
+	return &Environment{database: database, ctx: ctx, vars: make(map[string]interface{}), report: report, moduleName: name, outputter: outputter}
 }
 
 func (env *Environment) get(name string) interface{} {
 	if val, ok := env.vars[name]; ok {
 		return val
 	}
-	panic(fmt.Sprintf("переменная %s не определена", name))
+	panic(fmt.Sprintf("Variable %s was not defined", name))
 }
 
 func (env *Environment) set(name string, value interface{}) {
@@ -52,7 +56,7 @@ func (env *Environment) Eval(prog *ast.Program) {
 	defer env.close()
 	for _, stmt := range prog.Statements {
 		if env.ctx.Err() != nil {
-			return
+			panic("Context was cancelled")
 		}
 		env.evalStmt(stmt, false)
 	}
@@ -84,16 +88,18 @@ func (env *Environment) run() {
 
 func (env *Environment) close() {
 	if env.proc != nil {
-		fmt.Println("proc is closing")
 		env.stdOutR.Close()
 		env.stdInW.Close()
 		env.proc.Wait()
 	}
 }
 
-func (env *Environment) runCommand(cmd string) string {
+func (env *Environment) runCommand(verbose bool, cmd string) string {
+	if env.ctx.Err() != nil {
+		panic("Context error")
+	}
 	marker := fmt.Sprintf("__END_OF_CMD_%d_%d__", os.Getpid(), time.Now().UnixNano())
-	fullCmd := fmt.Sprintf("%s\necho '%s'\n", cmd, marker)
+	fullCmd := fmt.Sprintf("%s\necho %s\n", cmd, marker)
 	_, err := env.stdInW.Write([]byte(fullCmd))
 	if err != nil {
 		panic(err)
@@ -103,23 +109,21 @@ func (env *Environment) runCommand(cmd string) string {
 	reader := bufio.NewReader(env.stdOutR)
 
 	for {
+		if env.ctx.Err() != nil {
+			panic("Context error")
+		}
 		line, err := reader.ReadString('\n')
-
 		if err != nil {
 			if err == io.EOF {
 				break
 			}
 			return output.String() + "\n" + err.Error()
 		}
-		if strings.HasPrefix(line, "'"+marker+"'") {
-			codeStr := strings.TrimPrefix(line, "'"+marker+"'")
-			codeStr = strings.TrimSpace(codeStr)
-			var exitCode int
-			fmt.Sscanf(codeStr, "%d", &exitCode)
-			if exitCode != 0 {
-				return output.String() + " exit code:" + strconv.Itoa(exitCode)
-			}
+		if strings.Contains(line, marker) {
 			return output.String()
+		}
+		if verbose && env.outputter != nil {
+			env.outputter(line)
 		}
 		output.WriteString(line)
 	}
@@ -141,12 +145,18 @@ func (env *Environment) execBlock(stmts []ast.Stmt) (isBreak bool, isContinue bo
 		}
 	}()
 	for _, stmt := range stmts {
+		if env.ctx.Err() != nil {
+			panic("Context error")
+		}
 		env.evalStmt(stmt, true)
 	}
 	return false, false
 }
 
 func (env *Environment) evalStmt(stmt ast.Stmt, inLoop bool) {
+	if env.ctx.Err() != nil {
+		panic("Context error")
+	}
 	switch s := stmt.(type) {
 	case *ast.AssignStmt:
 		val := env.evalExpr(s.Expr)
@@ -203,13 +213,13 @@ func (env *Environment) evalStmt(stmt ast.Stmt, inLoop bool) {
 
 	case *ast.ContinueStmt:
 		if !inLoop {
-			panic("continue вне цикла")
+			panic("continue outside loop")
 		}
 
 		panic(ContinueSignal{})
 	case *ast.BreakStmt:
 		if !inLoop {
-			panic("break вне цикла")
+			panic("break outside loop")
 		}
 
 		panic(BreakSignal{})
@@ -217,20 +227,20 @@ func (env *Environment) evalStmt(stmt ast.Stmt, inLoop bool) {
 		arrVal := env.evalExpr(s.Array)
 		arr, ok := arrVal.([]interface{})
 		if !ok {
-			panic("присваивание элементу возможно только для массива")
+			panic("Assignment to an element is only possible for an array")
 		}
 		idxVal := env.evalExpr(s.Index)
 		idx, ok := idxVal.(int)
 		if !ok {
-			panic("индекс должен быть целым числом")
+			panic("index must be an integer")
 		}
 		if idx < 0 || idx >= len(arr) {
-			panic(fmt.Sprintf("индекс %d вне диапазона (длина %d)", idx, len(arr)))
+			panic(fmt.Sprintf("Index %d outside range (length %d)", idx, len(arr)))
 		}
 		val := env.evalExpr(s.Value)
 		arr[idx] = val
 	default:
-		panic(fmt.Sprintf("неизвестный оператор: %T", stmt))
+		panic(fmt.Sprintf("Unknown operator: %T", stmt))
 	}
 }
 
@@ -248,6 +258,9 @@ func isTruthy(v interface{}) bool {
 }
 
 func (env *Environment) evalExpr(expr ast.Expr) interface{} {
+	if env.ctx.Err() != nil {
+		panic("Context error")
+	}
 	switch e := expr.(type) {
 	case *ast.IntLiteral:
 		return e.Value
@@ -265,12 +278,12 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 			case int:
 				return -v
 			default:
-				panic("унарный минус только для чисел")
+				panic("Unary minus for numbers only")
 			}
 		case lexer.TOKEN_NOT:
 			return !isTruthy(right)
 		default:
-			panic("неизвестный унарный оператор")
+			panic("Unknown unary operator")
 		}
 	case *ast.BinaryExpr:
 		left := env.evalExpr(e.Left)
@@ -308,13 +321,13 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 		case lexer.TOKEN_GE:
 			return ge(left, right)
 		default:
-			panic("неизвестный бинарный оператор")
+			panic("Unknown binary operator")
 		}
 	case *ast.CallExpr:
 		switch e.Func {
 		case "contains":
 			if len(e.Args) != 2 {
-				panic("contains требует 2 аргумента")
+				panic("contains requires 2 arguments")
 			}
 			v := env.evalExpr(e.Args[0])
 			sub := env.evalExpr(e.Args[1])
@@ -330,7 +343,7 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 
 		case "replace":
 			if len(e.Args) != 3 {
-				panic("replace требует 3 аргумента")
+				panic("replace requires 3 arguments")
 			}
 			value := env.evalExpr(e.Args[0])
 			old := env.evalExpr(e.Args[1])
@@ -353,12 +366,12 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 					return newSlice
 				}()
 			default:
-				panic("неправильный тип данных в replace")
+				panic("Wrong data type in replace")
 			}
 
 		case "split":
 			if len(e.Args) != 2 {
-				panic("split требует 2 аргумента: строка, разделитель")
+				panic("split requires 2 arguments")
 			}
 			str := toString(env.evalExpr(e.Args[0]))
 			sep := toString(env.evalExpr(e.Args[1]))
@@ -370,7 +383,7 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 			return res
 		case "len":
 			if len(e.Args) != 1 {
-				panic("len требует 1 аргумент")
+				panic("len requires 1 argument")
 			}
 			arg := env.evalExpr(e.Args[0])
 			switch v := arg.(type) {
@@ -379,17 +392,17 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 			case string:
 				return len([]rune(v))
 			default:
-				panic("len применим только к массиву или строке")
+				panic("len only applicable to array or string")
 			}
 		case "append":
 			if len(e.Args) < 2 {
-				panic("append требует хотя бы один аргумент")
+				panic("append requires 2 or more arguments")
 			}
 
 			arrVal := env.evalExpr(e.Args[0])
 			arr, ok := arrVal.([]interface{})
 			if !ok {
-				panic("append: первый аргумент должен быть массивом")
+				panic("append: first argument must be an array")
 			}
 			newElems := make([]interface{}, len(arr))
 			copy(newElems, arr)
@@ -397,9 +410,21 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 				newElems = append(newElems, env.evalExpr(e.Args[i]))
 			}
 			return newElems
+		case "int":
+			if len(e.Args) != 1 {
+				panic("int requires exactly 1 argument")
+			}
+			val := env.evalExpr(e.Args[0])
+			return toInt(val)
+		case "str":
+			if len(e.Args) != 1 {
+				panic("str requires exactly 1 argument")
+			}
+			val := env.evalExpr(e.Args[0])
+			return toString(val)
 		case "fields":
 			if len(e.Args) != 1 {
-				panic("fields требует один аргумент")
+				panic("fields requires 1 argument")
 			}
 
 			s := toString(env.evalExpr(e.Args[0]))
@@ -411,58 +436,52 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 			return res
 		case "run":
 			if len(e.Args) < 2 {
-				panic("run требует 2 и более аргументов")
+				panic("run requires 2 and more arguments")
 			}
 
 			if env.proc == nil {
 				env.run()
 			}
 
+			varg := toString(env.evalExpr(e.Args[0]))
+			isv := env.isVerbose(varg)
 			var output strings.Builder
 			for i := 1; i < len(e.Args); i++ {
 				s := toString(env.evalExpr(e.Args[i]))
-				output.WriteString(env.runCommand(s))
+				output.WriteString(env.runCommand(isv, s))
 			}
 
-			varg := toString(env.evalExpr(e.Args[0]))
-			env.isVerbose(varg, output)
 			return output.String()
 		case "runIsolated":
 			if len(e.Args) < 2 {
-				panic("run требует 2 и более аргументов")
-			}
-
-			var output strings.Builder
-			for i := 1; i < len(e.Args); i++ {
-				s := toString(env.evalExpr(e.Args[i]))
-				output.WriteString(env.runIsolated(s))
+				panic("run requires 2 and more arguments")
 			}
 
 			varg := toString(env.evalExpr(e.Args[0]))
-			env.isVerbose(varg, output)
+			isv := env.isVerbose(varg)
+			var output strings.Builder
+			for i := 1; i < len(e.Args); i++ {
+				s := toString(env.evalExpr(e.Args[i]))
+				output.WriteString(env.runIsolated(isv, s))
+			}
+
 			return output.String()
-		case "Report":
+		case "report":
 			if len(e.Args) < 2 {
-				panic("Report требует 2 и более аргументов")
+				panic("report requires 2 and more arguments")
 			}
 
-			body := ""
-
-			if env.report == nil {
-				body = env.createReport(e.Args)
-			} else {
-				body = env.addToReport(e.Args)
-			}
+			body := env.addToReport(e.Args)
 
 			return body
-		case "Process":
+		case "process":
 			if len(e.Args) < 2 {
-				panic("Process требует 2 и более аргументов")
+				panic("process requires 2 and more arguments")
 			}
 
 			return env.process(e.Args)
 		default:
-			panic("неизвестная функция")
+			panic("Unknown function")
 		}
 	case *ast.ArrayLiteral:
 		elems := make([]interface{}, len(e.Elements))
@@ -475,23 +494,25 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 		idxVal := env.evalExpr(e.Index)
 		idx, ok := idxVal.(int)
 		if !ok {
-			panic("индекс должен быть целым числом")
+			panic("Index must be an integer")
 		}
 
 		if str, ok := arr.(string); ok {
 			runes := []rune(str)
 			if idx < 0 || idx >= len(runes) {
-				panic(fmt.Sprintf("индекс %d вне диапазона строки (длина в рунах %d)", idx, len(runes)))
+				panic(fmt.Sprintf("Index %d outside of string range (length %d)", idx, len(runes)))
 			}
 			return string(runes[idx])
 		}
 
 		slice, ok := arr.([]interface{})
 		if !ok {
-			panic("индексирование возможно только для массива или строки")
+			panic("indexing is only possible for an array or a string")
 		}
 		if idx < 0 || idx >= len(slice) {
-			panic(fmt.Sprintf("индекс %d вне диапазона (длина %d)", idx, len(slice)))
+			panic(fmt.Sprintf("Index %d outside of range (length %d)", idx, len(slice)))
+		} else if slice[idx] == nil {
+			return ""
 		}
 		return slice[idx]
 	case *ast.SliceExpr:
@@ -511,7 +532,7 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 			sliceData = v
 			length = len(sliceData)
 		default:
-			panic("wrong data type")
+			panic("Wrong data type")
 		}
 
 		start := 0
@@ -521,7 +542,7 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 			startVal := env.evalExpr(e.Start)
 			startInt, ok := startVal.(int)
 			if !ok {
-				panic("начало среза должно быть целым числом")
+				panic("The start of the slice must be an integer")
 			}
 			start = startInt
 		}
@@ -530,7 +551,7 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 			endVal := env.evalExpr(e.End)
 			endInt, ok := endVal.(int)
 			if !ok {
-				panic("конец среза должен быть целым числом")
+				panic("The end of the slice must be an integer")
 			}
 			end = endInt
 		}
@@ -544,7 +565,7 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 		}
 
 		if start < 0 || end < 0 || start > length || end > length || start > end {
-			panic(fmt.Sprintf("недопустимые границы среза: %d:%d (длина %d)", start, end, length))
+			panic(fmt.Sprintf("Invalid slice boundaries:: %d:%d (length %d)", start, end, length))
 		}
 
 		if isString {
@@ -553,13 +574,14 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 			return sliceData[start:end]
 		}
 	default:
-		panic("неизвестный узел выражения")
+		panic("Unknown expression node")
 	}
 }
 
-func (env *Environment) process(args []ast.Expr) []string {
-	dbType := toString(env.evalExpr(args[0]))
-	db := outputprocessor.NewDB(dbType, env.ctx)
+func (env *Environment) process(args []ast.Expr) []interface{} {
+	dbTypeVal := env.evalExpr(args[0])
+	dbType := toString(dbTypeVal)
+	db := outputprocessor.NewDB(env.database, dbType, env.ctx)
 
 	cache := make(map[string]*outputprocessor.Order)
 	software := make([]*outputprocessor.Order, 0)
@@ -568,33 +590,19 @@ func (env *Environment) process(args []ast.Expr) []string {
 	processor := outputprocessor.NewProcessor(db, cache, software, cve)
 
 	data := args[1:]
-
-	output := make([]string, len(data))
-
-	for i := range data {
-		output = append(output, processor.ProcessOutput(toString(env.evalExpr(data[i]))))
+	output := make([]interface{}, len(data))
+	for i, expr := range data {
+		val := env.evalExpr(expr)
+		output[i] = processor.ProcessOutput(toString(val))
 	}
-
 	return output
-}
-
-func (env *Environment) createReport(args []ast.Expr) string {
-	rtype := toString(env.evalExpr(args[0]))
-	env.report = reporter.NewReport(rtype)
-
-	err := env.report.NewReporter()
-	if err != nil {
-		panic(err)
-	}
-
-	env.report.Content = append(env.report.Content, env.report.NewReportContent(env.moduleName))
-	return env.fillReport(env.report.Content[0], args[1:])
 }
 
 func (env *Environment) addToReport(args []ast.Expr) string {
 	rtype := toString(env.evalExpr(args[0]))
-	if env.report.Rtype != rtype {
-		panic("неверный формат отчета")
+	env.checkReporter(rtype)
+	if env.report.Reporter.GetFileType() != rtype {
+		panic("Unknown report format")
 	}
 	var content *reporter.ReportContent
 	for _, c := range env.report.Content {
@@ -612,21 +620,37 @@ func (env *Environment) addToReport(args []ast.Expr) string {
 	return env.fillReport(content, args[1:])
 }
 
+func (env *Environment) checkReporter(rtype string) {
+	var err error
+	if env.report.Reporter == nil {
+		env.report.Reporter, err = env.report.NewReporter(rtype)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+}
+
 func (env *Environment) fillReport(r *reporter.ReportContent, args []ast.Expr) string {
 	for i := range args {
-		r.Body += toString(args[i]) + "\n"
+		val := env.evalExpr(args[i])
+		r.Body += toString(val) + "\n"
 	}
 	return r.Body
 }
 
-func (env *Environment) runIsolated(s string) string {
-	cmd := exec.Command("cmd", "/C", s)
+func (env *Environment) runIsolated(verbose bool, s string) string {
+	cmd := exec.Command("/bin/bash", "-c", s)
+
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stdout
 	err := cmd.Run()
 	if err != nil {
-		panic(err.Error())
+		return stdout.String() + "\n" + err.Error()
+	}
+	if verbose && env.outputter != nil {
+		env.outputter(stdout.String())
 	}
 	return stdout.String()
 }
@@ -635,17 +659,24 @@ func (env *Environment) writeStdIn(s string) {
 	env.stdInW.Write([]byte(s))
 }
 
-func (env *Environment) isVerbose(varg string, output strings.Builder) {
+func (env *Environment) isVerbose(varg string) bool {
 	switch varg {
 	case "Verbose":
-		env.outputter(output.String())
+		return true
 	case "":
+		return false
 	default:
-		panic("неизвестный аргумент")
+		panic("Unknown argument")
 	}
 }
 
 func add(a, b interface{}) interface{} {
+	if isNil(a) {
+		a = ""
+	}
+	if isNil(b) {
+		b = ""
+	}
 	switch av := a.(type) {
 	case int:
 		switch bv := b.(type) {
@@ -658,15 +689,28 @@ func add(a, b interface{}) interface{} {
 			return av + bv
 		}
 	}
-	panic(fmt.Sprintf("неподдерживаемые типы для +: %T и %T", a, b))
+	panic(fmt.Sprintf("Unknown types for + operator: %T and %T", a, b))
 }
+
+func isNil(i interface{}) bool {
+	if i == nil {
+		return true
+	}
+	v := reflect.ValueOf(i)
+	switch v.Kind() {
+	case reflect.Ptr, reflect.Interface, reflect.Slice, reflect.Map, reflect.Chan, reflect.Func:
+		return v.IsNil()
+	}
+	return false
+}
+
 func sub(a, b interface{}) interface{} {
 	av, ok1 := a.(int)
 	bv, ok2 := b.(int)
 	if ok1 && ok2 {
 		return av - bv
 	}
-	panic(fmt.Sprintf("неподдерживаемые типы для -: %T и %T", a, b))
+	panic(fmt.Sprintf("Unknown types for - operator: %T and %T", a, b))
 }
 func mul(a, b interface{}) interface{} {
 	av, ok1 := a.(int)
@@ -674,29 +718,29 @@ func mul(a, b interface{}) interface{} {
 	if ok1 && ok2 {
 		return av * bv
 	}
-	panic(fmt.Sprintf("неподдерживаемые типы для *: %T и %T", a, b))
+	panic(fmt.Sprintf("Unknown types for * operator: %T and %T", a, b))
 }
 func div(a, b interface{}) interface{} {
 	av, ok1 := a.(int)
 	bv, ok2 := b.(int)
 	if ok1 && ok2 {
 		if bv == 0 {
-			panic("деление на ноль")
+			panic("division by 0")
 		}
 		return av / bv
 	}
-	panic(fmt.Sprintf("неподдерживаемые типы для /: %T и %T", a, b))
+	panic(fmt.Sprintf("Unknown types for / operator: %T and %T", a, b))
 }
 func mod(a, b interface{}) interface{} {
 	av, ok1 := a.(int)
 	bv, ok2 := b.(int)
 	if ok1 && ok2 {
 		if bv == 0 {
-			panic("остаток от деления на ноль")
+			panic("Remainder after division by zero")
 		}
 		return av % bv
 	}
-	panic(fmt.Sprintf("неподдерживаемые типы для %%: %T и %T", a, b))
+	panic(fmt.Sprintf("Unknown types for %% operator : %T and %T", a, b))
 }
 func equal(a, b interface{}) bool {
 	switch av := a.(type) {
@@ -717,7 +761,7 @@ func less(a, b interface{}) bool {
 	if ok1 && ok2 {
 		return av < bv
 	}
-	panic(fmt.Sprintf("сравнение < допустимо только для чисел, получены %T и %T", a, b))
+	panic(fmt.Sprintf("Comparison < is only valid for numbers obtained %T and %T", a, b))
 }
 func greater(a, b interface{}) bool {
 	av, ok1 := a.(int)
@@ -725,7 +769,7 @@ func greater(a, b interface{}) bool {
 	if ok1 && ok2 {
 		return av > bv
 	}
-	panic(fmt.Sprintf("сравнение > допустимо только для чисел, получены %T и %T", a, b))
+	panic(fmt.Sprintf("Comparison > is only valid for numbers obtained %T and %T", a, b))
 }
 func le(a, b interface{}) bool {
 	av, ok1 := a.(int)
@@ -733,7 +777,7 @@ func le(a, b interface{}) bool {
 	if ok1 && ok2 {
 		return av <= bv
 	}
-	panic(fmt.Sprintf("сравнение <= допустимо только для чисел, получены %T и %T", a, b))
+	panic(fmt.Sprintf("Comparison <= is only valid for numbers obtained %T and %T", a, b))
 }
 func ge(a, b interface{}) bool {
 	av, ok1 := a.(int)
@@ -741,11 +785,30 @@ func ge(a, b interface{}) bool {
 	if ok1 && ok2 {
 		return av >= bv
 	}
-	panic(fmt.Sprintf("сравнение >= допустимо только для чисел, получены %T и %T", a, b))
+	panic(fmt.Sprintf("Comparison >= is only valid for numbers obtained %T and %T", a, b))
 }
 func toString(v interface{}) string {
-	if s, ok := v.(string); ok {
-		return s
+	switch t := v.(type) {
+	case string:
+		return t
+	case int:
+		return strconv.Itoa(t)
+	default:
+		panic(fmt.Sprintf("Expected string, got %T", v))
 	}
-	panic(fmt.Sprintf("ожидалась строка, получен %T", v))
+}
+
+func toInt(val interface{}) int {
+	switch v := val.(type) {
+	case int:
+		return v
+	case string:
+		i, err := strconv.Atoi(v)
+		if err != nil {
+			panic(fmt.Sprintf("cannot convert '%s' to integer", v))
+		}
+		return i
+	default:
+		panic(fmt.Sprintf("cannot convert %T to integer", v))
+	}
 }

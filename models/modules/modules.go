@@ -1,13 +1,9 @@
 package modules
 
 type Module struct {
-	Name       string `json:"name"`
-	Content    string `json:"content"`
-	Output     string `json:"-"`
-	MakeReport struct {
-		Do      bool `json:"do"`
-		Process bool `json:"process"`
-	} `json:"makeReport"`
+	Name    string `json:"name"`
+	Content string `json:"content"`
+	Output  string `json:"-"`
 }
 
 type ClipModules struct {

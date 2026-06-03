@@ -38,7 +38,7 @@ func (p *Parser) expect(t lexer.TokenType) {
 		p.nextToken()
 		return
 	}
-	panic(fmt.Sprintf("ожидался %v, получен %v ('%s') на %d:%d", t, p.curTok.Type, p.curTok.Value, p.curTok.Line, p.curTok.Col))
+	panic(fmt.Sprintf("Expected %v, got %v ('%s') on %d:%d", t, p.curTok.Type, p.curTok.Value, p.curTok.Line, p.curTok.Col))
 }
 
 func (p *Parser) ParseProgram() *ast.Program {
@@ -83,7 +83,7 @@ func (p *Parser) parseStatement() ast.Stmt {
 			expr := p.parseExpr()
 			return &ast.ExprStmt{Expr: expr}
 		}
-		panic(fmt.Sprintf("неожиданный токен: %v ('%s') на %d:%d", p.curTok.Type, p.curTok.Value, p.curTok.Line, p.curTok.Col))
+		panic(fmt.Sprintf("Unexpected token: %v ('%s') on %d:%d", p.curTok.Type, p.curTok.Value, p.curTok.Line, p.curTok.Col))
 	}
 }
 
@@ -263,6 +263,8 @@ func (p *Parser) parsePrimary() ast.Expr {
 		p.curTokenIs(lexer.TOKEN_SPLIT) ||
 		p.curTokenIs(lexer.TOKEN_LEN) ||
 		p.curTokenIs(lexer.TOKEN_APPEND) ||
+		p.curTokenIs(lexer.TOKEN_STR) ||
+		p.curTokenIs(lexer.TOKEN_INT) ||
 		p.curTokenIs(lexer.TOKEN_FIELDS) ||
 		p.curTokenIs(lexer.TOKEN_RUN) ||
 		p.curTokenIs(lexer.TOKEN_RUNISOLATED) ||
@@ -277,7 +279,7 @@ func (p *Parser) parsePrimary() ast.Expr {
 	case p.curTokenIs(lexer.TOKEN_LBRACKET):
 		return p.parseArrayLiteral()
 	default:
-		panic(fmt.Sprintf("ожидалось выражение, получен %v ('%s') на %d:%d", p.curTok.Type, p.curTok.Value, p.curTok.Line, p.curTok.Col))
+		panic(fmt.Sprintf("Expected expression, got %v ('%s') in %d:%d", p.curTok.Type, p.curTok.Value, p.curTok.Line, p.curTok.Col))
 	}
 }
 

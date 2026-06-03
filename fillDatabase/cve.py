@@ -1,6 +1,7 @@
 import psycopg
 import os
-from utils import iter_json_files
+import time
+from utils import iter_json_files, log
 
 def main():
     conn = psycopg.connect(
@@ -11,10 +12,15 @@ def main():
         port=os.getenv('POSTGRES_PORT', 5432)
     )
     conn.autocommit = False
+    log("Connected to PostgreSQL")
 
     cve_folder = os.getenv('CVE_FOLDER', '/app/cve')
+    total_inserts = 0
+    start_time = time.time()
+
     with conn.cursor() as cur:
         for file_path, data in iter_json_files(cve_folder):
+            file_inserts = 0
             for vuln in data.get('vulnerabilities', []):
                 cve = vuln.get('cve', {})
                 cve_id = cve.get('id')
@@ -47,14 +53,22 @@ def main():
                 refs_str = '\n'.join(refs) if refs else None
 
                 cur.execute("""
-                    INSERT INTO cves (id, description, severity, references)
+                    INSERT INTO cve (id, descr, severity, refs)
                     VALUES (%s, %s, %s, %s)
                     ON CONFLICT (id) DO UPDATE SET
-                        description = EXCLUDED.description,
+                        descr = EXCLUDED.descr,
                         severity = EXCLUDED.severity,
-                        references = EXCLUDED.references
+                        refs = EXCLUDED.refs
                 """, (cve_id, desc, severity, refs_str))
-        conn.commit()
+                file_inserts += 1
+                total_inserts += 1
+                if file_inserts % 1000 == 0:
+                    log(f"  {file_path.name}: inserted {file_inserts} CVEs so far")
+            conn.commit()
+            log(f"Committed {file_inserts} CVEs from {file_path.name}")
+
+    elapsed = time.time() - start_time
+    log(f"Total CVEs inserted/updated: {total_inserts} in {elapsed:.2f} seconds")
     conn.close()
 
 if __name__ == '__main__':

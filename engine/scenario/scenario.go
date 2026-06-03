@@ -9,32 +9,34 @@ import (
 	"clip/processors/reporter"
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 
 	_ "embed"
+
+	"gorm.io/gorm"
 )
 
 type Scenario struct {
-	Main          string
-	ThreadNumber  int
-	ModulesStruct [][]*modules.Module
+	main          string
+	threadNumber  int
+	modulesStruct [][]*modules.Module
 	report        *reporter.Report
 }
 
 func NewScenario(main string, thread int, module [][]*modules.Module) *Scenario {
-	return &Scenario{Main: main, ThreadNumber: thread, ModulesStruct: module}
+	return &Scenario{main: main, threadNumber: thread, modulesStruct: module}
 }
 
-func (s *Scenario) Execute(errCh chan<- error, ctx context.Context, outputter func(any, *modules.Module)) *reporter.Report {
+func (s *Scenario) Execute(database *gorm.DB, errCh chan<- error, ctx context.Context, outputter func(any, *modules.Module)) *reporter.Report {
 	var wg sync.WaitGroup
 
-	semaphore := make(chan struct{}, s.ThreadNumber)
+	s.report = reporter.NewReport()
+	semaphore := make(chan struct{}, s.threadNumber)
 	defer close(semaphore)
 
-	for i := range s.ModulesStruct {
-		wg.Add(len(s.ModulesStruct[i]))
-		for _, m := range s.ModulesStruct[i] {
+	for i := range s.modulesStruct {
+		wg.Add(len(s.modulesStruct[i]))
+		for _, m := range s.modulesStruct[i] {
 			go func(m *modules.Module) {
 				if ctx.Err() != nil {
 					outputter("Canceled\n", m)
@@ -51,7 +53,7 @@ func (s *Scenario) Execute(errCh chan<- error, ctx context.Context, outputter fu
 						case eval.BreakSignal, eval.ContinueSignal:
 							return
 						default:
-							localoutputter(fmt.Sprintf("Module '%s' error: %v\n", m.Name, r))
+							localoutputter(fmt.Sprintf("Module '%v' error: %v\n", m.Name, r))
 							errCh <- errors.NewWithPlace(errWhileExecutingCode, errors.Place(m.Name))
 						}
 					}
@@ -61,20 +63,17 @@ func (s *Scenario) Execute(errCh chan<- error, ctx context.Context, outputter fu
 				semaphore <- struct{}{}
 				defer func() { <-semaphore }()
 				defer wg.Done()
-
-				startFrom := strings.IndexFunc(m.Content, func(r rune) bool { return r == '\n' })
-
-				l := lexer.NewLexer(s.Main + "\n" + m.Content[startFrom+1:])
+				l := lexer.NewLexer(s.main + "\n" + m.Content)
 				p := parser.NewParser(l)
 				prog := p.ParseProgram()
-				env := eval.NewEnvironment(ctx, s.report, m.Name, localoutputter)
+				env := eval.NewEnvironment(database, ctx, s.report, m.Name, localoutputter)
 				env.Eval(prog)
 			}(m)
 		}
 		wg.Wait()
 	}
 
-	if s.report != nil {
+	if len(s.report.Content) != 0 {
 		return s.report
 	}
 	return nil

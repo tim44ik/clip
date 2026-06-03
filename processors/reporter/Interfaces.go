@@ -11,7 +11,6 @@ type Reporter interface {
 
 type Report struct {
 	Reporter Reporter
-	Rtype    string
 	Content  []*ReportContent
 }
 
@@ -20,20 +19,19 @@ type ReportContent struct {
 	Body  string
 }
 
-func NewReport(rtype string) *Report {
-	return &Report{Rtype: rtype, Content: make([]*ReportContent, 0)}
+func NewReport() *Report {
+	return &Report{Content: make([]*ReportContent, 0)}
 }
 
 func (r *Report) NewReportContent(mName string) *ReportContent {
 	return &ReportContent{Mname: mName}
 }
 
-func (r *Report) NewReporter() error {
-	switch r.Rtype {
+func (r *Report) NewReporter(rtype string) (Reporter, error) {
+	switch rtype {
 	case ".pdf":
-		r.Reporter = &pdf{}
-		return nil
+		return &pdf{}, nil
 	default:
-		return errors.New(errWrongReportFormat)
+		return nil, errors.New(errWrongReportFormat)
 	}
 }
