@@ -10,7 +10,7 @@ COPY fillDatabase/ ./fillDatabase/
 COPY migrations/ ./migrations/
 
 RUN git lfs install && \
-    git clone https://github.com/tim44ik/DataFeeds.git /tmp/DataFeeds && \
+    git clone https://github.com/tim44ikk-boop/DataFeeds.git /tmp/DataFeeds && \
     cd /tmp/DataFeeds && git lfs pull && \
     rm -rf /tmp/DataFeeds/.git
 
@@ -41,7 +41,7 @@ COPY --from=db-builder /dbdata/data /var/lib/postgresql/data
 RUN chown -R postgres:postgres /var/lib/postgresql/data && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-ENV POSTGRES_DB=cve_db
-ENV POSTGRES_USER=postgres
-ENV POSTGRES_PASSWORD=postgres
+ENV POSTGRES_DB=cve_db \
+    POSTGRES_USER=postgres \
+    POSTGRES_PASSWORD=postgres
 EXPOSE 5432

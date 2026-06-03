@@ -27,16 +27,15 @@ RUN apt-get update && apt-get install -y locales && \
     echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
     locale-gen
 
-ENV LANG=en_US.UTF-8
-ENV LANGUAGE=en_US:en
-ENV LC_ALL=en_US.UTF-8
-
-ENV DISPLAY=:99
-ENV POSTGRES_HOST=db
-ENV POSTGRES_DB=cve_db
-ENV POSTGRES_USER=postgres
-ENV POSTGRES_PASSWORD=postgres
-ENV POSTGRES_PORT=5432
+ENV LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8 \
+    DISPLAY=:99 \
+    POSTGRES_HOST=db \
+    POSTGRES_DB=cve_db \
+    POSTGRES_USER=postgres \
+    POSTGRES_PASSWORD=postgres \
+    POSTGRES_PORT=5432
 
 RUN apt-get update && apt-get install -y \
     kali-linux-headless \
@@ -64,7 +63,6 @@ COPY cmd/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 RUN useradd -m -s /bin/bash fyne && chown -R fyne:fyne /app
-
 RUN mkdir /shared && chown fyne:fyne /shared
 VOLUME /shared
 
