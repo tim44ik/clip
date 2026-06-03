@@ -35,8 +35,6 @@ After starting, open your browser at `http://localhost:6080/vnc.html` – you wi
 
 There is **no native build outside Docker** – the architecture relies on the database and the Kali environment being present.
 
-It also creates **/shared** folder in working directory so you can share config files and run external apps in the environment.
-
 ## User Interface
 
 ### Top Panel
