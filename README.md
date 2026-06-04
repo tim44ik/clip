@@ -27,7 +27,114 @@ The repository provides `Dockerfile.db`, `Dockerfile.app`, and `docker-compose.y
 
 ### Run with Docker
 
+The easiest way to run clip is using the pre‑built Docker images.
+The project provides separate images for amd64 (Intel/AMD) and arm64 (Apple Silicon, ARM servers).
+Choose the tag that matches your system.
+1. Prepare docker-compose.yml
+
+Create a file named docker-compose.yml with the following content.
+Select the correct image tag for your architecture:
+
+    For amd64 systems use amd64latest
+
+    For arm64 systems use arm64latest
+
+```yaml
+
+services:
+  db:
+    image: tim44ik/clip-db:amd64latest       # change to arm64latest if needed
+    environment:
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=cve_db
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  app:
+    image: tim44ik/clip-app:amd64latest       # change to arm64latest if needed
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - POSTGRES_HOST=db
+      - POSTGRES_DB=cve_db
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_PORT=5432
+      - DISPLAY=:99
+      - LANG=C.UTF-8
+      - LC_ALL=C.UTF-8
+    volumes:
+      - ./shared:/shared
+    ports:
+      - "6080:6080"
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+```
+
+2. Start the application
+
 ```bash
+
+docker compose up -d
+```
+
+After a few seconds, open your browser and go to http://localhost:6080/vnc.html.
+You will see the clip graphical interface (VNC web client).
+The native VNC server also listens on port 5900 – you can connect with any VNC client.
+3. Stop the containers
+```bash
+
+docker compose down
+```
+
+Data is stored in the Docker volume pgdata – it will persist across restarts.
+To completely remove the database volume, use 
+
+```bash
+docker compose down -v.
+```
+
+Building images locally (optional)
+
+If you prefer to build the images from source instead of pulling from Docker Hub, you can add build sections to docker-compose.yml.
+
+For amd64:
+```yaml
+
+services:
+  db:
+    build:
+      context: .
+      dockerfile: Dockerfile.db
+    # ... rest unchanged
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    # ... rest unchanged
+```
+
+For arm64:
+Make sure the GOARCH inside Dockerfile.app is set to arm64 (the repository contains separate Dockerfiles or you can modify it accordingly).
+
+After adding the build blocks, simply run:
+```bash
+
+docker compose build
 docker compose up -d
 ```
 

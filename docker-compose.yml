@@ -1,6 +1,6 @@
 services:
   db:
-    image: tim44ik/clip-db:latest
+    image: tim44ik/clip-db:amd64latest
     environment:
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_USER=postgres
@@ -15,7 +15,7 @@ services:
     restart: unless-stopped
 
   app:
-    image: tim44ik/clip-app:latest
+    image: tim44ik/clip-app:amd64latest
     depends_on:
       db:
         condition: service_healthy
