@@ -72,7 +72,6 @@ func GetQueue(m []*modules.Module) ([][]*modules.Module, error) {
 		if err != nil {
 			return nil, errors.NewWithPlace(errQueueNotDeclarated, errors.Place(m[i].Name))
 		}
-		m[i].Content = m[i].Content[nextLine:]
 		queueMap[qNum] = append(queueMap[qNum], m[i])
 	}
 

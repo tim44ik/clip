@@ -18,11 +18,13 @@ import (
 	"strings"
 	"time"
 
+	ansi "github.com/leaanthony/go-ansi-parser"
 	"gorm.io/gorm"
 )
 
 type Environment struct {
 	ctx        context.Context
+	cmd        *exec.Cmd
 	proc       *os.Process
 	stdOutR    io.ReadCloser
 	stdInW     io.WriteCloser
@@ -87,10 +89,13 @@ func (env *Environment) run() {
 }
 
 func (env *Environment) close() {
+	if env.cmd != nil {
+		env.cmd.Process.Kill()
+	}
 	if env.proc != nil {
 		env.stdOutR.Close()
 		env.stdInW.Close()
-		env.proc.Wait()
+		env.proc.Kill()
 	}
 }
 
@@ -123,11 +128,11 @@ func (env *Environment) runCommand(verbose bool, cmd string) string {
 			return output.String()
 		}
 		if verbose && env.outputter != nil {
-			env.outputter(line)
+			env.outputter(env.cleanUnicode(line))
 		}
 		output.WriteString(line)
 	}
-	return output.String()
+	return env.cleanUnicode(output.String())
 }
 
 func (env *Environment) execBlock(stmts []ast.Stmt) (isBreak bool, isContinue bool) {
@@ -333,7 +338,7 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 			sub := env.evalExpr(e.Args[1])
 			switch value := v.(type) {
 			case string:
-				substr := toString(sub)
+				substr := env.toString(sub)
 				return strings.Contains(value, substr)
 			case []interface{}:
 				return slices.Contains(value, sub)
@@ -350,8 +355,8 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 			new := env.evalExpr(e.Args[2])
 			switch v := value.(type) {
 			case string:
-				o := toString(old)
-				n := toString(new)
+				o := env.toString(old)
+				n := env.toString(new)
 				return strings.ReplaceAll(v, o, n)
 			case []interface{}:
 				return func() []interface{} {
@@ -373,8 +378,8 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 			if len(e.Args) != 2 {
 				panic("split requires 2 arguments")
 			}
-			str := toString(env.evalExpr(e.Args[0]))
-			sep := toString(env.evalExpr(e.Args[1]))
+			str := env.toString(env.evalExpr(e.Args[0]))
+			sep := env.toString(env.evalExpr(e.Args[1]))
 			parts := strings.Split(str, sep)
 			res := make([]interface{}, len(parts))
 			for i, p := range parts {
@@ -421,13 +426,13 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 				panic("str requires exactly 1 argument")
 			}
 			val := env.evalExpr(e.Args[0])
-			return toString(val)
+			return env.toString(val)
 		case "fields":
 			if len(e.Args) != 1 {
 				panic("fields requires 1 argument")
 			}
 
-			s := toString(env.evalExpr(e.Args[0]))
+			s := env.toString(env.evalExpr(e.Args[0]))
 			fields := strings.Fields(s)
 			res := make([]interface{}, 0, len(fields))
 			for _, f := range fields {
@@ -443,11 +448,11 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 				env.run()
 			}
 
-			varg := toString(env.evalExpr(e.Args[0]))
+			varg := env.toString(env.evalExpr(e.Args[0]))
 			isv := env.isVerbose(varg)
 			var output strings.Builder
 			for i := 1; i < len(e.Args); i++ {
-				s := toString(env.evalExpr(e.Args[i]))
+				s := env.toString(env.evalExpr(e.Args[i]))
 				output.WriteString(env.runCommand(isv, s))
 			}
 
@@ -457,11 +462,11 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 				panic("run requires 2 and more arguments")
 			}
 
-			varg := toString(env.evalExpr(e.Args[0]))
+			varg := env.toString(env.evalExpr(e.Args[0]))
 			isv := env.isVerbose(varg)
 			var output strings.Builder
 			for i := 1; i < len(e.Args); i++ {
-				s := toString(env.evalExpr(e.Args[i]))
+				s := env.toString(env.evalExpr(e.Args[i]))
 				output.WriteString(env.runIsolated(isv, s))
 			}
 
@@ -578,9 +583,17 @@ func (env *Environment) evalExpr(expr ast.Expr) interface{} {
 	}
 }
 
+func (env *Environment) cleanUnicode(s string) string {
+	clean, err := ansi.Cleanse(s)
+	if err != nil {
+		panic(err)
+	}
+	return clean
+}
+
 func (env *Environment) process(args []ast.Expr) []interface{} {
 	dbTypeVal := env.evalExpr(args[0])
-	dbType := toString(dbTypeVal)
+	dbType := env.toString(dbTypeVal)
 	db := outputprocessor.NewDB(env.database, dbType, env.ctx)
 
 	cache := make(map[string]*outputprocessor.Order)
@@ -593,13 +606,13 @@ func (env *Environment) process(args []ast.Expr) []interface{} {
 	output := make([]interface{}, len(data))
 	for i, expr := range data {
 		val := env.evalExpr(expr)
-		output[i] = processor.ProcessOutput(toString(val))
+		output[i] = processor.ProcessOutput(env.toString(val))
 	}
 	return output
 }
 
 func (env *Environment) addToReport(args []ast.Expr) string {
-	rtype := toString(env.evalExpr(args[0]))
+	rtype := env.toString(env.evalExpr(args[0]))
 	env.checkReporter(rtype)
 	if env.report.Reporter.GetFileType() != rtype {
 		panic("Unknown report format")
@@ -634,7 +647,7 @@ func (env *Environment) checkReporter(rtype string) {
 func (env *Environment) fillReport(r *reporter.ReportContent, args []ast.Expr) string {
 	for i := range args {
 		val := env.evalExpr(args[i])
-		r.Body += toString(val) + "\n"
+		r.Body += env.toString(val) + "\n"
 	}
 	return r.Body
 }
@@ -649,10 +662,11 @@ func (env *Environment) runIsolated(verbose bool, s string) string {
 	if err != nil {
 		return stdout.String() + "\n" + err.Error()
 	}
+	data := env.cleanUnicode(stdout.String())
 	if verbose && env.outputter != nil {
-		env.outputter(stdout.String())
+		env.outputter(data)
 	}
-	return stdout.String()
+	return data
 }
 
 func (env *Environment) writeStdIn(s string) {
@@ -787,10 +801,10 @@ func ge(a, b interface{}) bool {
 	}
 	panic(fmt.Sprintf("Comparison >= is only valid for numbers obtained %T and %T", a, b))
 }
-func toString(v interface{}) string {
+func (env *Environment) toString(v interface{}) string {
 	switch t := v.(type) {
 	case string:
-		return t
+		return env.cleanUnicode(t)
 	case int:
 		return strconv.Itoa(t)
 	default:

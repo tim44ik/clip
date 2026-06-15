@@ -9,6 +9,7 @@ import (
 	"clip/processors/reporter"
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	_ "embed"
@@ -63,7 +64,9 @@ func (s *Scenario) Execute(database *gorm.DB, errCh chan<- error, ctx context.Co
 				semaphore <- struct{}{}
 				defer func() { <-semaphore }()
 				defer wg.Done()
-				l := lexer.NewLexer(s.main + "\n" + m.Content)
+
+				startFrom := strings.IndexFunc(m.Content, func(r rune) bool { return r == '\n' })
+				l := lexer.NewLexer(s.main + "\n" + m.Content[startFrom:])
 				p := parser.NewParser(l)
 				prog := p.ParseProgram()
 				env := eval.NewEnvironment(database, ctx, s.report, m.Name, localoutputter)

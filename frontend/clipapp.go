@@ -330,7 +330,7 @@ func (a *ClipWindow) interruptScenario() {
 		a.cancel = nil
 	}
 	a.currentScenario = nil
-	a.elms.activity.Hide()
+	fyne.Do(func() { a.elms.activity.Hide() })
 
 }
 

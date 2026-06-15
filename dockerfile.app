@@ -52,6 +52,7 @@ RUN apt-get update && apt-get install -y \
     fluxbox \
     wget \
     postgresql-client \
+    sshpass \
     && wget https://github.com/novnc/noVNC/archive/refs/tags/v1.4.0.tar.gz && \
     tar xzf v1.4.0.tar.gz && mv noVNC-1.4.0 /opt/noVNC && \
     rm v1.4.0.tar.gz && \
