@@ -15,33 +15,25 @@ type NVDClient struct {
 }
 
 func (n *NVDClient) GetPData(product, version string) ([]*CVEInfo, error) {
-	var cpeList []nvd.CPE
+	var cveModels []nvd.CVE
 	err := n.database.WithContext(n.ctx).
-		Where("product = ? AND ver = ?", product, version).
-		Find(&cpeList).Error
+		Table("cpe_cve").
+		Select("cve.*").
+		Joins("JOIN cve ON cpe_cve.cve_id = cve.id").
+		Joins("JOIN cpe ON cpe_cve.cpe_name = cpe.cpe_name").
+		Where("cpe.product = ? AND cpe.ver = ?", product, version).
+		Find(&cveModels).Error
 	if err != nil {
-		return nil, fmt.Errorf("query CPE failed: %w", err)
+		return nil, fmt.Errorf("query failed: %w", err)
 	}
-	if len(cpeList) == 0 {
-		return nil, nil
+	if len(cveModels) == 0 {
+		return nil, fmt.Errorf("")
 	}
 
 	cveMap := make(map[string]*CVEInfo)
-	for _, cpe := range cpeList {
-		var cveModels []nvd.CVE
-		err := n.database.WithContext(n.ctx).
-			Table("cpe_cve").
-			Select("cve.*").
-			Joins("JOIN cve ON cpe_cve.cve_id = cve.id").
-			Where("cpe_cve.cpe_name = ?", cpe.CPE_name).
-			Find(&cveModels).Error
-		if err != nil {
-			return nil, fmt.Errorf("query CVE for CPE %s failed: %w", cpe.CPE_name, err)
-		}
-		for _, cve := range cveModels {
-			if _, exists := cveMap[cve.ID]; !exists {
-				cveMap[cve.ID] = modelToCVEInfo(&cve)
-			}
+	for _, cve := range cveModels {
+		if _, exists := cveMap[cve.ID]; !exists {
+			cveMap[cve.ID] = modelToCVEInfo(&cve)
 		}
 	}
 

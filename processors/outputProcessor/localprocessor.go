@@ -2,7 +2,9 @@ package outputprocessor
 
 import (
 	"fmt"
+	"log"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -57,6 +59,7 @@ func (p *Processor) ProcessOutput(data string) string {
 				soft.cve = nil
 				return
 			}
+			log.Println(soft)
 			p.Set(soft.name[0], soft.cve)
 		}()
 	}
@@ -111,30 +114,35 @@ func (p *Processor) Set(key string, value []*CVEInfo) {
 }
 
 func (p *Processor) returnResults(data string) string {
-	output := []string{fmt.Sprintf("\n\nProcessing results for \"%s\":", strings.TrimSpace(data))}
-	if len(p.software) != 0 {
-		for _, soft := range p.software {
-			if soft.cve != nil {
-				output = append(output,
-					fmt.Sprintf(
-						"\n>%s\n\nKnown CVE related to that:",
-						soft.name[0]))
+	if len(p.software) == 0 && len(p.cve) == 0 {
+		return ""
+	}
 
-				for _, cve := range soft.cve {
-					output = append(output, "\n"+cve.ID)
+	dr := []rune(data)
+	if len(dr) > 20 {
+		dr = dr[:20]
+		dr = append(dr, []rune("...")...)
+	}
+	output := []string{fmt.Sprintf("\n\nProcessing results for \"%s\":", strings.TrimSpace(string(dr)))}
+	for _, soft := range p.software {
+		if soft.cve != nil {
+			output = append(output,
+				fmt.Sprintf(
+					"\n>%s\n\nKnown CVE related to that:",
+					soft.name[0]))
 
-					output = appendOutput(output, cve)
-				}
+			for _, cve := range soft.cve {
+				output = append(output, "\n"+cve.ID)
+
+				output = appendOutput(output, cve)
 			}
 		}
 	}
 
-	if len(p.cve) != 0 {
-		for _, cveStruct := range p.cve {
-			if cveStruct.cve != nil {
-				output = append(output, "\n>"+cveStruct.name[0])
-				output = appendOutput(output, cveStruct.cve[0])
-			}
+	for _, cveStruct := range p.cve {
+		if cveStruct.cve != nil {
+			output = append(output, "\n>"+cveStruct.name[0])
+			output = appendOutput(output, cveStruct.cve[0])
 		}
 	}
 
@@ -153,19 +161,23 @@ func (p *Processor) findCVEs(lines []string) {
 		foundSoft := reSoft.FindAllStringSubmatch(line, -1)
 
 		for _, f := range foundCve {
+			if !slices.Contains(cveKeys, f) {
+				cveKeys = append(cveKeys, f)
+			}
 			cve, ok := p.cache[f]
 			if !ok {
 				cve = &Order{name: []string{f}}
 				p.cache[f] = cve
 			}
-
-			cveKeys = append(cveKeys, f)
-
 		}
 
 		for _, f := range foundSoft {
-			if len([]rune(f[1])) <= 2 || f[2] == "" {
+			if len([]rune(f[1])) < 3 || len([]rune(f[2])) < 3 {
 				continue
+			}
+
+			if !slices.Contains(softKeys, f[0]) {
+				softKeys = append(softKeys, f[0])
 			}
 
 			soft, ok := p.cache[f[0]]
@@ -173,7 +185,6 @@ func (p *Processor) findCVEs(lines []string) {
 				soft = &Order{name: []string{f[0], f[1], f[2]}}
 				p.cache[f[0]] = soft
 			}
-			softKeys = append(softKeys, f[0])
 
 		}
 	}
@@ -187,6 +198,8 @@ func (p *Processor) findCVEs(lines []string) {
 	for _, key := range softKeys {
 		p.software = append(p.software, p.cache[key])
 	}
+
+	log.Println(softKeys)
 }
 
 func appendOutput(outputListed []string, cve *CVEInfo) []string {
@@ -197,7 +210,7 @@ func appendOutput(outputListed []string, cve *CVEInfo) []string {
 	)
 
 	outputListed = append(outputListed, fmt.Sprintf(
-		"\nSeverity calculated with V40 metrics: %s",
+		"\nSeverity: %s",
 		cve.Severity))
 
 	outputListed = append(outputListed, "\nLinks:")

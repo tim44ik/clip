@@ -1,135 +1,119 @@
-import psycopg
+import json
+import logging
 import os
-import re
-import time
-from utils import iter_json_files, extract_vendor_product_version, log
+import sys
+import psycopg
+from pathlib import Path
 
-def parse_version(ver_str):
-    if not ver_str or ver_str == '*':
-        return ()
-    parts = re.split(r'\.', ver_str)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+CVE_FOLDER = Path(os.environ.get("CVE_FOLDER", "/app/cve"))
+BATCH_SIZE = 10000
+
+def parse_cpe(criteria: str):
+    parts = criteria.split(':')
+    vendor = parts[3] if len(parts) > 3 and parts[3] != '*' else None
+    product = parts[4] if len(parts) > 4 and parts[4] != '*' else None
+    version = parts[5] if len(parts) > 5 and parts[5] not in ('*', '-') else None
+    return vendor, product, version
+
+def collect_cpe_matches(node):
+    """Рекурсивно собирает все criteria из cpeMatch с vulnerable=True."""
     result = []
-    for p in parts:
-        if p.isdigit():
-            result.append(int(p))
-        else:
-            result.append(p)
-    return tuple(result)
-
-def version_in_range(ver_tuple, start_incl, start_excl, end_incl, end_excl):
-    if start_incl is not None and ver_tuple < start_incl:
-        return False
-    if start_excl is not None and ver_tuple <= start_excl:
-        return False
-    if end_incl is not None and ver_tuple > end_incl:
-        return False
-    if end_excl is not None and ver_tuple >= end_excl:
-        return False
-    return True
+    for match in node.get("cpeMatch", []):
+        if match.get("vulnerable") in (True, "true"):
+            criteria = match.get("criteria")
+            if criteria:
+                result.append(criteria)
+    for child in node.get("children", []):
+        result.extend(collect_cpe_matches(child))
+    return result
 
 def main():
     conn = psycopg.connect(
-        dbname=os.getenv('POSTGRES_DB', 'cve_db'),
-        user=os.getenv('POSTGRES_USER', 'user'),
-        password=os.getenv('POSTGRES_PASSWORD', 'pass'),
-        host=os.getenv('POSTGRES_HOST', 'localhost'),
-        port=os.getenv('POSTGRES_PORT', 5432)
+        host=os.environ.get("POSTGRES_HOST", "localhost"),
+        dbname=os.environ.get("POSTGRES_DB", "cve_db"),
+        user=os.environ.get("POSTGRES_USER", "postgres"),
+        password=os.environ.get("POSTGRES_PASSWORD", "postgres"),
     )
     conn.autocommit = False
-    log("Connected to PostgreSQL")
 
-    # Загружаем все CPE в память
-    with conn.cursor() as cur:
-        cur.execute("SELECT cpe_name, vendor, product, ver FROM cpe")
-        cpe_map = {}
-        for cpe_name, vendor, product, version in cur.fetchall():
-            if vendor is None or product is None:
-                continue
-            key = (vendor, product)
-            ver_tuple = parse_version(version) if version else ()
-            cpe_map.setdefault(key, []).append((cpe_name, ver_tuple))
-    log(f"Loaded {sum(len(v) for v in cpe_map.values())} CPE entries into memory")
+    files = list(CVE_FOLDER.rglob("*.json"))
+    if not files:
+        logging.error("No JSON files found in %s", CVE_FOLDER)
+        sys.exit(1)
+    logging.info("Found %d JSON files", len(files))
 
-    cve_folder = os.getenv('CVE_FOLDER', '/app/cve')
-    total_relations = 0
-    start_time = time.time()
+    cpe_buffer = []
+    cpe_cve_buffer = []
+    inserted_cpe = 0
+    inserted_links = 0
 
-    with conn.cursor() as cur:
-        processed_criteria = {}
-        for file_path, data in iter_json_files(cve_folder):
-            file_relations = 0
-            for vuln in data.get('vulnerabilities', []):
-                cve_data = vuln.get('cve')
-                if not isinstance(cve_data, dict):
-                    continue
-                cve_id = cve_data.get('id')
-                if not cve_id:
-                    continue
+    try:
+        with conn.cursor() as cur:
+            for file in files:
+                logging.info("Processing %s", file.name)
+                with open(file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                for item in data.get("vulnerabilities", []):
+                    cve = item.get("cve", {})
+                    cve_id = cve.get("id")
+                    if not cve_id:
+                        continue
+                    for config in cve.get("configurations", []):
+                        for node in config.get("nodes", []):
+                            for criteria in collect_cpe_matches(node):
+                                vendor, product, ver = parse_cpe(criteria)
+                                cpe_buffer.append((criteria, vendor, product, ver))
+                                cpe_cve_buffer.append((criteria, cve_id))
 
-                configurations = cve_data.get('configurations', {})
-                if isinstance(configurations, dict):
-                    nodes = configurations.get('nodes', [])
-                elif isinstance(configurations, list):
-                    nodes = configurations
-                else:
-                    nodes = []
+                                if len(cpe_buffer) >= BATCH_SIZE:
+                                    cur.executemany(
+                                        "INSERT INTO cpe (cpe_name, vendor, product, ver) VALUES (%s, %s, %s, %s) ON CONFLICT (cpe_name) DO NOTHING",
+                                        cpe_buffer,
+                                    )
+                                    conn.commit()
+                                    inserted_cpe += len(cpe_buffer)
+                                    cpe_buffer.clear()
 
-                for node in nodes:
-                    for cpem in node.get('cpeMatch', []):
-                        criteria = cpem.get('criteria')
-                        if not criteria:
-                            continue
-                        if not cpem.get('vulnerable', False):
-                            continue
-                        vendor, product, criteria_version = extract_vendor_product_version(criteria)
-                        if not vendor or not product:
-                            continue
-                        start_incl = cpem.get('versionStartIncluding')
-                        start_excl = cpem.get('versionStartExcluding')
-                        end_incl = cpem.get('versionEndIncluding')
-                        end_excl = cpem.get('versionEndExcluding')
+                                    cur.executemany(
+                                        "INSERT INTO cpe_cve (cpe_name, cve_id) VALUES (%s, %s) ON CONFLICT (cpe_name, cve_id) DO NOTHING",
+                                        cpe_cve_buffer,
+                                    )
+                                    conn.commit()
+                                    inserted_links += len(cpe_cve_buffer)
+                                    cpe_cve_buffer.clear()
+                                    logging.info("Inserted batch: CPEs=%d, links=%d", inserted_cpe, inserted_links)
 
-                        if any([start_incl, start_excl, end_incl, end_excl]):
-                            key = (vendor, product)
-                            cpe_list = cpe_map.get(key, [])
-                            for cpe_name, ver_tuple in cpe_list:
-                                if version_in_range(ver_tuple,
-                                                   parse_version(start_incl) if start_incl else None,
-                                                   parse_version(start_excl) if start_excl else None,
-                                                   parse_version(end_incl) if end_incl else None,
-                                                   parse_version(end_excl) if end_excl else None):
-                                    cur.execute("""
-                                        INSERT INTO cpe_cve (cpe_name, cve_id) VALUES (%s, %s) ON CONFLICT DO NOTHING
-                                    """, (cpe_name, cve_id))
-                                    file_relations += 1
-                        else:
-                            if criteria_version == '*' or criteria_version is None:
-                                key = (vendor, product)
-                                cpe_list = cpe_map.get(key, [])
-                                for cpe_name, _ in cpe_list:
-                                    cur.execute("""
-                                        INSERT INTO cpe_cve (cpe_name, cve_id) VALUES (%s, %s) ON CONFLICT DO NOTHING
-                                    """, (cpe_name, cve_id))
-                                    file_relations += 1
-                            else:
-                                if criteria in processed_criteria:
-                                    cpe_names = processed_criteria[criteria]
-                                else:
-                                    cur.execute("SELECT cpe_name FROM cpe WHERE cpe_name = %s", (criteria,))
-                                    cpe_names = [row[0] for row in cur.fetchall()]
-                                    processed_criteria[criteria] = cpe_names
-                                for cpe_name in cpe_names:
-                                    cur.execute("""
-                                        INSERT INTO cpe_cve (cpe_name, cve_id) VALUES (%s, %s) ON CONFLICT DO NOTHING
-                                    """, (cpe_name, cve_id))
-                                    file_relations += 1
-            conn.commit()
-            total_relations += file_relations
-            log(f"Committed {file_relations} relations from {file_path.name} (total {total_relations})")
+            if cpe_buffer:
+                cur.executemany(
+                    "INSERT INTO cpe (cpe_name, vendor, product, ver) VALUES (%s, %s, %s, %s) ON CONFLICT (cpe_name) DO NOTHING",
+                    cpe_buffer,
+                )
+                conn.commit()
+                inserted_cpe += len(cpe_buffer)
+                cpe_buffer.clear()
+            if cpe_cve_buffer:
+                cur.executemany(
+                    "INSERT INTO cpe_cve (cpe_name, cve_id) VALUES (%s, %s) ON CONFLICT (cpe_name, cve_id) DO NOTHING",
+                    cpe_cve_buffer,
+                )
+                conn.commit()
+                inserted_links += len(cpe_cve_buffer)
+                cpe_cve_buffer.clear()
 
-    elapsed = time.time() - start_time
-    log(f"Total CPE-CVE relations inserted: {total_relations} in {elapsed:.2f} seconds")
-    conn.close()
+            cur.execute("SELECT COUNT(*) FROM cpe")
+            cpe_count = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(*) FROM cpe_cve")
+            link_count = cur.fetchone()[0]
+            logging.info("Final counts: cpe=%d, cpe_cve=%d", cpe_count, link_count)
 
-if __name__ == '__main__':
+    except Exception as e:
+        logging.error("Error: %s", e)
+        conn.rollback()
+        sys.exit(1)
+    finally:
+        conn.close()
+
+if __name__ == "__main__":
     main()

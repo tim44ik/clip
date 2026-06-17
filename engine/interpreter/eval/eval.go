@@ -58,7 +58,7 @@ func (env *Environment) Eval(prog *ast.Program) {
 	defer env.close()
 	for _, stmt := range prog.Statements {
 		if env.ctx.Err() != nil {
-			panic("Context was cancelled")
+			return
 		}
 		env.evalStmt(stmt, false)
 	}

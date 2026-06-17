@@ -2,7 +2,7 @@
 SELECT 'up SQL query';
 CREATE TABLE IF NOT EXISTS cpe (
     cpe_name TEXT PRIMARY KEY,
-    vendor TEXT NOT NULL,
+    vendor TEXT,
     product TEXT,
     ver TEXT
 );

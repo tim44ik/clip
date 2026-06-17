@@ -39,7 +39,7 @@ func TestProcessCaching(t *testing.T) {
 	db.Create(&nvd.CPE_CVE{CPE_name: cpe2.CPE_name, CVE_id: cve2.ID})
 
 	s := `
-	%s = process("NVD", "test_product 1.0","test_product 1.0", "test_product 2.0","CVE-2021-1234", "CVE-2021-5678")
+	%s = process("NVD", "test_product 1.0 test_product 1.0 test_product 2.0 test_product 2.0","test_product 1.0", "test_product 2.0","CVE-2021-1234", "CVE-2021-5678")
 	%full = ""
 	for %i = 0; %i<len(%s); %i=%i+1 do
 		%full = %full +%s[%i]

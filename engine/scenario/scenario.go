@@ -54,6 +54,9 @@ func (s *Scenario) Execute(database *gorm.DB, errCh chan<- error, ctx context.Co
 						case eval.BreakSignal, eval.ContinueSignal:
 							return
 						default:
+							if r.(string) == "Context error" {
+								return
+							}
 							localoutputter(fmt.Sprintf("Module '%v' error: %v\n", m.Name, r))
 							errCh <- errors.NewWithPlace(errWhileExecutingCode, errors.Place(m.Name))
 						}

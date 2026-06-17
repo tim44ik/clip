@@ -1,75 +1,166 @@
-import psycopg
+import logging
 import os
-import time
-from utils import iter_json_files, log
+from pathlib import Path
 
-def main():
-    conn = psycopg.connect(
-        dbname=os.getenv('POSTGRES_DB', 'cve_db'),
-        user=os.getenv('POSTGRES_USER', 'user'),
-        password=os.getenv('POSTGRES_PASSWORD', 'pass'),
-        host=os.getenv('POSTGRES_HOST', 'localhost'),
-        port=os.getenv('POSTGRES_PORT', 5432)
-    )
-    conn.autocommit = False
-    log("Connected to PostgreSQL")
+import psycopg
 
-    cve_folder = os.getenv('CVE_FOLDER', '/app/cve')
-    total_inserts = 0
-    start_time = time.time()
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+)
 
+CVE_FOLDER = Path(os.environ["CVE_FOLDER"])
+
+conn = psycopg.connect(
+    host=os.environ["POSTGRES_HOST"],
+    dbname=os.environ["POSTGRES_DB"],
+    user=os.environ["POSTGRES_USER"],
+    password=os.environ["POSTGRES_PASSWORD"],
+)
+
+BATCH_SIZE = 5000
+
+
+def extract_description(cve: dict) -> str:
+    for item in cve.get("descriptions", []):
+        if item.get("lang") == "en":
+            return item.get("value", "")
+
+    return ""
+
+
+def extract_severity(cve: dict):
+    metrics = cve.get("metrics", {})
+
+    if "cvssMetricV40" in metrics and metrics["cvssMetricV40"]:
+        return (
+            metrics["cvssMetricV40"][0]
+            .get("cvssData", {})
+            .get("baseSeverity")
+        )
+
+    if "cvssMetricV31" in metrics and metrics["cvssMetricV31"]:
+        return (
+            metrics["cvssMetricV31"][0]
+            .get("cvssData", {})
+            .get("baseSeverity")
+        )
+
+    if "cvssMetricV30" in metrics and metrics["cvssMetricV30"]:
+        return (
+            metrics["cvssMetricV30"][0]
+            .get("cvssData", {})
+            .get("baseSeverity")
+        )
+
+    if "cvssMetricV2" in metrics and metrics["cvssMetricV2"]:
+        return metrics["cvssMetricV2"][0].get("baseSeverity")
+
+    return None
+
+
+processed = 0
+buffer = []
+
+with conn:
     with conn.cursor() as cur:
-        for file_path, data in iter_json_files(cve_folder):
-            file_inserts = 0
-            for vuln in data.get('vulnerabilities', []):
-                cve = vuln.get('cve', {})
-                cve_id = cve.get('id')
+
+        for file in sorted(CVE_FOLDER.rglob("*.json")):
+
+            logging.info("Processing %s", file)
+
+            try:
+                import json
+
+                with open(file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+
+            except Exception:
+                logging.exception("Failed to parse %s", file)
+                continue
+
+            for item in data.get("vulnerabilities", []):
+
+                cve = item.get("cve", {})
+
+                cve_id = cve.get("id")
+
                 if not cve_id:
                     continue
 
-                desc = None
-                for d in cve.get('descriptions', []):
-                    if d.get('lang') == 'en':
-                        desc = d.get('value')
-                        break
+                refs = "\n".join(
+                    sorted(
+                        {
+                            ref["url"]
+                            for ref in cve.get("references", [])
+                            if ref.get("url")
+                        }
+                    )
+                )
 
-                severity = None
-                metrics = cve.get('metrics', {})
-                if 'cvssMetricV31' in metrics and metrics['cvssMetricV31']:
-                    severity = metrics['cvssMetricV31'][0].get('cvssData', {}).get('baseSeverity')
-                elif 'cvssMetricV30' in metrics and metrics['cvssMetricV30']:
-                    severity = metrics['cvssMetricV30'][0].get('cvssData', {}).get('baseSeverity')
-                elif 'cvssMetricV2' in metrics and metrics['cvssMetricV2']:
-                    severity = metrics['cvssMetricV2'][0].get('baseSeverity')
-                elif 'cvssMetricV40' in metrics and metrics['cvssMetricV40']:
-                    severity = metrics['cvssMetricV40'][0].get('cvssData', {}).get('baseSeverity')
+                buffer.append(
+                    (
+                        cve_id,
+                        extract_description(cve),
+                        extract_severity(cve),
+                        refs,
+                    )
+                )
 
-                refs = []
-                for ref in cve.get('references', []):
-                    if 'Broken Link' not in ref.get('tags', []):
-                        url = ref.get('url')
-                        if url:
-                            refs.append(url)
-                refs_str = '\n'.join(refs) if refs else None
+                processed += 1
 
-                cur.execute("""
-                    INSERT INTO cve (id, descr, severity, refs)
-                    VALUES (%s, %s, %s, %s)
-                    ON CONFLICT (id) DO UPDATE SET
-                        descr = EXCLUDED.descr,
-                        severity = EXCLUDED.severity,
-                        refs = EXCLUDED.refs
-                """, (cve_id, desc, severity, refs_str))
-                file_inserts += 1
-                total_inserts += 1
-                if file_inserts % 1000 == 0:
-                    log(f"  {file_path.name}: inserted {file_inserts} CVEs so far")
+                if len(buffer) >= BATCH_SIZE:
+
+                    cur.executemany(
+                        """
+                        INSERT INTO cve (
+                            id,
+                            descr,
+                            severity,
+                            refs
+                        )
+                        VALUES (%s, %s, %s, %s)
+                        ON CONFLICT (id) DO NOTHING
+                        """,
+                        buffer,
+                    )
+
+                    conn.commit()
+
+                    logging.info(
+                        "Inserted %d CVE (processed=%d)",
+                        len(buffer),
+                        processed,
+                    )
+
+                    buffer.clear()
+
+        if buffer:
+
+            cur.executemany(
+                """
+                INSERT INTO cve (
+                    id,
+                    descr,
+                    severity,
+                    refs
+                )
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (id) DO NOTHING
+                """,
+                buffer,
+            )
+
             conn.commit()
-            log(f"Committed {file_inserts} CVEs from {file_path.name}")
 
-    elapsed = time.time() - start_time
-    log(f"Total CVEs inserted/updated: {total_inserts} in {elapsed:.2f} seconds")
-    conn.close()
+            logging.info(
+                "Inserted final %d CVE",
+                len(buffer),
+            )
 
-if __name__ == '__main__':
-    main()
+logging.info(
+    "Finished CVE import. Total processed=%d",
+    processed,
+)
+
+conn.close()

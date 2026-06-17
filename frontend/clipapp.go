@@ -237,6 +237,7 @@ func (a *ClipWindow) runner(scenario *scenario.Scenario, ctx context.Context) {
 			if err != nil {
 				ShowError(a.modules.CurrentLang, err, a.Window)
 				a.interruptScenario()
+				return
 			}
 		}
 	}()
@@ -330,8 +331,7 @@ func (a *ClipWindow) interruptScenario() {
 		a.cancel = nil
 	}
 	a.currentScenario = nil
-	fyne.Do(func() { a.elms.activity.Hide() })
-
+	fyne.DoAndWait(func() { a.elms.activity.Hide(); a.elms.activity.Stop() })
 }
 
 func (a *ClipWindow) selectMainModule() {
@@ -609,7 +609,10 @@ func (a *ClipWindow) fullRefresh() {
 				fyne.NewMenuItem(locales.T(a.modules.CurrentLang, "begin_scenario"),
 					func() { a.beginScenario() }),
 				fyne.NewMenuItem(locales.T(a.modules.CurrentLang, "break_scenario"),
-					func() { a.interruptScenario() }),
+					func() {
+						a.interruptScenario()
+						dialog.ShowInformation(locales.T(a.modules.CurrentLang, "interrupted"), locales.T(a.modules.CurrentLang, "scenario_interrupted"), a.Window)
+					}),
 			)))
 
 	a.elms.topPanel.Add(

@@ -27,12 +27,16 @@ RUN /usr/lib/postgresql/15/bin/initdb -D /var/lib/postgresql/data && \
     export POSTGRES_HOST=localhost POSTGRES_DB=cve_db POSTGRES_USER=postgres POSTGRES_PASSWORD=postgres && \
     export CVE_FOLDER=/tmp/DataFeeds/cve && \
     export CPE_FOLDER=/tmp/DataFeeds/cpe && \
-    python3 fillDatabase/cve.py && \
-    python3 fillDatabase/cpe.py && \
-    python3 fillDatabase/cve_cpe.py && \
-    /usr/lib/postgresql/15/bin/pg_ctl -D /var/lib/postgresql/data stop
-USER root
+    python3 -u fillDatabase/cve.py && \
+    python3 -u fillDatabase/cve_cpe.py && \
+    psql -d cve_db -c "SELECT COUNT(*) FROM cve;" && \
+    psql -d cve_db -c "SELECT COUNT(*) FROM cpe;" && \
+    psql -d cve_db -c "SELECT COUNT(*) FROM cpe_cve;" && \
+    /usr/lib/postgresql/15/bin/pg_ctl -D /var/lib/postgresql/data stop -m fast
 
+RUN sleep 2 && sync
+
+USER root
 RUN mkdir /dbdata && cp -r /var/lib/postgresql/data /dbdata && \
     rm -rf /dbdata/log/*
 

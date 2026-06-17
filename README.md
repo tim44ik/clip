@@ -23,7 +23,7 @@ Key features:
 ## Building & Running
 
 Clip is meant to be used as a **Docker‑based solution**.  
-The repository provides `Dockerfile.db`, `Dockerfile.app`, and `docker-compose.yml` to launch a self‑contained environment with Kali Linux, all necessary CLI tools, and a pre‑filled vulnerability database.
+The repository provides `Dockerfile.db`, `Dockerfile.app`, and `Docker-compose.yml` to launch a self‑contained environment with Kali Linux, all necessary CLI tools, and a pre‑filled vulnerability database.
 
 ### Run with Docker
 
@@ -48,8 +48,6 @@ services:
       - POSTGRES_PASSWORD=postgres
       - POSTGRES_USER=postgres
       - POSTGRES_DB=cve_db
-    volumes:
-      - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
