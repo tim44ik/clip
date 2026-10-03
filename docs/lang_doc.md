@@ -6,7 +6,6 @@ This document describes the syntax and features of the embedded scripting langua
 
 - **Variables**: All variables begin with `%` (e.g., `%x`, `%result`).  
   Variables are dynamically typed and can hold numbers, strings, booleans, and arrays.
-- **Comments**: Start with `#` and continue to the end of the line.
 - **Output**: Use the built-in `print(...)` function. Multiple arguments can be passed separated by commas: `print(%a, %b, "text")`.
 
 ## Data Types
